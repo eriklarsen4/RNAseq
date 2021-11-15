@@ -1,4 +1,4 @@
-# Transcriptomics
+# RNAseq
 Template R code for bioinformatics analysis pipelines.
 
 RNAseq scripts (WGCNA, Hippocampus Bioinformatics, Bioinformatics) analyze gene expression changes in mice with Tmem184b gene trap. These use mRNA TPM and DESeq2 DGEA files.
