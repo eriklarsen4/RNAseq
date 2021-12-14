@@ -1,0 +1,483 @@
+---
+title: "WGCNA"
+author: "Erik Larsen"
+date: "11/22/2021"
+output: html_document
+---
+The following code was adapted from a compilation of sources, primarily consisting of the tutorial from the [WGCNA](https://cran.r-project.org/package=WGCNA) package developed by Steve Horvath, Peter Langfelder, and Bin Zhang. This was originally a walkthrough workflow for performing Weighted Gene Co-Expression Analysis (gene network analysis). There is also a standalone R script and downstream bioinformatics analysis scripts (GO and pathway analysis, network analysis) based on the gene modules derived below.
+
+
+
+## Environment Prep
+Note that code can be sectioned and condensed with the `Alt+O` command.
+
+List of packages for this script:
+[BiocGenerics](https://bioconductor.org/packages/BiocGenerics), [tidyverse](https://cran.r-project.org/package=tidyverse), [plyr](https://cran.r-project.org/package=plyr), [dplyr](https://cran.r-project.org/package=dplyr), [reshape2](https://cran.r-project.org/package=reshape2), [stringr](https://cran.r-project.org/package=stringr), [readr](https://cran.r-project.org/package=readr), [stats4](https://cran.r-project.org/package=stats4), [matrixStats](https://cran.r-project.org/package=matrixStats), [dendextend](https://cran.r-project.org/package=dendextend), [ggdendro](https://cran.r-project.org/package=ggdendro), [pheatmap](https://cran.r-project.org/package=pheatmap), [fastcluster](https://cran.r-project.org/package=fastcluster), [dynamicTreeCut](https://cran.r-project.org/package=dynamicTreeCut), [grid](https://cran.r-project.org/package=grid), [igraph](https://cran.r-project.org/package=igraph), [WGCNA](https://cran.r-project.org/package=WGCNA), [clValid](https://cran.r-project.org/package=clValid), [biomaRt](https://bioconductor.org/packages/biomaRt/)
+
+Install biology-based packages with `BiocManager`. Load the [BiocGenerics](https://bioconductor.org/packages/BiocGenerics) package for Bioconductor-relevant functionality (installing packages from [Bioconductor](https://www.bioconductor.org/))
+
+```{r include = TRUE, message = FALSE}
+library(BiocGenerics) ## Needed to install and/or load Bioconductor packages
+```
+
+
+Load some of the packages.
+``` {r include = TRUE, message = FALSE}
+## For data wrangling (slicing/adding/removing/melting/rearranging dataframes and their columns and rows):
+library(tidyverse)
+library(plyr)
+library(dplyr)
+library(reshape2)
+
+library(stringr) ## Awesome for manipulating strings
+
+library(readr) ## For importing data and files
+
+library(stats4)
+library(matrixStats) ## Necessary for matrix multiplication, manipulation
+
+library(dendextend) ## Additional flexibility in creating dendrograms (dashed line extensions and additional stuff)
+library(ggdendro) ## Enables ggplot-quality dendrograms to be attached to heatmaps
+library(pheatmap) ## Awesome for creating custom heatmaps
+library(fastcluster)
+library(dynamicTreeCut) ## Enables flexibly customizing and automatically cutting dendrograms
+
+library(grid) ## grid has been removed from Cran and is incorporated into base R
+library(igraph) ## igraph enables network visualization and customization
+
+library(WGCNA) ## Creates topological overlap matrices and enables visualizing hierarchically clustered dendrograms and networks
+library(clValid) ## Used for validating clustering (Dunn Index, Silhouette)
+
+library(httpuv) ## For including plots in Markdown file output
+```
+
+## Data Prep
+
+Import the differential expression dataset of interest and clean the data.
+```{r include = TRUE, message = FALSE}
+## Tmem184b-GT/GT aDRG DGE
+DESeq2_Adults = read.csv("M:/Erik/Data/Omics/RNAseq/Adult DRG/Processed Galaxy Output/Test Results to Upload/DESeq2 Expression Results.csv")
+
+## Filter (subset) genes that went undetected or were outliers in terms of counts; new dataframe should not contain any NAs in p-value columns
+DESeq2_Adults3 = subset(DESeq2_Adults, (!is.na(DESeq2_Adults[,"AdjP"])))
+
+## Filter the DEGs by removing rRNAs and mitochondrial tRNAs.
+DESeq2_Adults9 = DESeq2_Adults3 %>% filter(!grepl(DESeq2_Adults3$GeneID, pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
+
+## Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
+  ## First create the column and use Gene IDs as place-holders
+DESeq2_Adults9$labs = DESeq2_Adults9$GeneID
+
+  ## Replace DEGs with the string, "DEGs"
+DESeq2_Adults9$labs[
+  which(DESeq2_Adults9$AdjP <= 0.05)]= "DEGs"
+    
+  ## Replace the remaining genes with "Non-DEGs"
+DESeq2_Adults9$labs[
+  which(DESeq2_Adults9$AdjP >= 0.05)]= "Non-DEGs"
+
+  ## Create a list of the gene names of differentially expressed genes
+DEG_list = c(DESeq2_Adults9$GeneID[
+  which(DESeq2_Adults9$labs == "DEGs")])
+
+```
+
+
+Import the TPM file (normalized counts file).
+```{r include = TRUE, message = FALSE, warning = FALSE}
+  ## Import the TPM file. These are expression estimates for each gene, for each sample/replicate, where each gene's value is normalized to its sample's effect size
+Adult_Normalized_Counts = read_csv("M:/Erik/Data/Omics/RNAseq/Adult DRG/Processed Galaxy Output/Counts Files to Upload/RNASeqRepResults.csv", col_names = TRUE)
+  ## Rename columns; should know this ahead of time
+colnames(Adult_Normalized_Counts) = c("GeneID", "WT1", "WT2", "WT3", "WT4", "Mut1", "Mut2", "Mut3", "Mut4")
+
+  ## Subset the genes most affected by Tmem mutation **if using a laptop** (laptops don't have enough RAM to process >5000)
+DESeq2_Short = DESeq2_Adults9[c(1:5000),]
+  
+  ## Subset the TPM file by the 5000 most-affected genes
+Short_Profile = Adult_Normalized_Counts[Adult_Normalized_Counts$GeneID %in% c(DESeq2_Short$GeneID),]
+
+```
+
+## Generate heatmaps from hierarchically clustered data
+
+Create a function that will find row Z scores across the dataset.
+```{r include = TRUE, message = FALSE, warning = FALSE, echo = FALSE}
+  ## Create a function that determines the Zscores of the expression profile (row Z-scores)
+Find_Row_Z = function(Expression_Profile){
+  ## Create dataframes to calculate Z-scores across replicates of each gene.
+  ## These will hold the original dataframe values until filled in later commands
+  ## "Big" will store the means and sds of each gene
+  NetBIG = Expression_Profile
+  ## "3" will store only the means by genes for all replicates
+  Net3 = Expression_Profile
+  ## "4" will store only the sds by gene for all replicates
+  Net4 = Expression_Profile
+  ## "Z" will store only the Z-scores, which will be used directly to create the heatmaps
+  NetZ = Expression_Profile
+  
+  ## Create a new column to fill with the means and standard deviations of each gene's transcript counts per million ("TPM")
+  NetBIG$mean = 0
+  NetBIG$sd = 0
+  
+  ## Loop through the dataframe and fill the "mean" and "sd" columns with their appropriate values
+  for (i in 1:nrow(NetBIG)){
+    NetBIG$mean[i] = (sum(Expression_Profile[i,c(2:ncol(Expression_Profile))])/ncol(Expression_Profile[,c(2:ncol(Expression_Profile))]))
+  }
+  for (j in 1:nrow(NetBIG)){
+    NetBIG$sd[j] = sd(Expression_Profile[j,c(2:ncol(Expression_Profile))], na.rm = TRUE)
+  }
+  ## Create a dataframe storing the gene-specific mean normalized TPM in all columns/replicates for Z-score calculating
+  Net3[,c(2:ncol(Expression_Profile))] = NetBIG$mean
+  ## Create a dataframe storing the gene-specific normalized TPM standard deviationsin all columns/replicates for Z-score calculating
+  Net4[,c(2:ncol(Expression_Profile))] = NetBIG$sd
+  ## Create the Z-score dataframe
+  NetZ[,c(2:ncol(Expression_Profile))] = (Expression_Profile[,c(2:ncol(Expression_Profile))] - Net3[,c(2:ncol(Expression_Profile))])/Net4[,c(2:ncol(Expression_Profile))]
+  ## Remove the genes that were detected to have 0 TPMs across all samples
+  ## Create a function that evaluates a vector/dataframe's (x's) numerical values. Returns equal length vector with T/F bools.
+  ## Subset the dataframe that filters those genes.
+  row_has_na = apply(NetZ, 1, function(x){any(is.na(x))})
+  NetZ = NetZ[!row_has_na,]
+  Z <<- NetZ
+}
+```
+
+
+Run the function to determine Row Z-score (gene-wise Z)
+```{r include = TRUE, messsage = FALSE, warning = FALSE, echo = TRUE}
+Find_Row_Z(Expression_Profile = Short_Profile)
+```
+
+
+Perform hierarchical clustering using Euclidean distance on the Z values obtained above. Find Tmem184b's row.
+```{r include = TRUE, message = FALSE, warning = FALSE}
+  ## Perform hierarchical clustering on the Z-score transcriptional profiles; Use Euclidean distance (Correlation distance is equivalent to Euclidean Z)
+Euclid_dist_order_Z = hclust(dist(Z[,2:9], method = "euclidean"))$order
+
+  ## Find the gene names of Z-scored, hierarchically-clustered-and-ordered-by-Euclidean-distance TPM data
+Euclid_dist_ord_Z_Genes = c(Z$GeneID[Euclid_dist_order_Z])
+
+  ## Re-arrange the Z-clustered profiles into a format compatible with heatmap construction
+Corr_Z = Z %>%
+  mutate(GeneID = factor(GeneID, levels = Euclid_dist_ord_Z_Genes)) %>%
+  arrange(GeneID)
+
+  ## Find where Tmem is
+which(Euclid_dist_ord_Z_Genes == "Tmem184b") # 2904
+```
+
+Use that index (Tmem's row) to center a heatmap around Tmem184b.
+This groups the genes most affected by the Tmem gene trap together.
+```{r include = TRUE, message = FALSE, warning = FALSE}
+  ## Create a heatmap around Tmem
+pheatmap(mat = Corr_Z[2884:2924,2:9], color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)), clustering_distance_rows = "euclidean", clustering_distance_cols = "euclidean", angle_col = 0, treeheight_row = 35, treeheight_col = 7, labels_row = Euclid_dist_ord_Z_Genes[2884:2924])
+```
+
+
+For a comprehensive transcriptional heatmap profile, use all genes
+```{r include = TRUE, message = FALSE, warning = FALSE}
+  ## Create a heatmap of all 5000 genes
+pheatmap(mat = Corr_Z[,2:9], color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)), clustering_distance_rows = "euclidean", clustering_distance_cols = "euclidean", angle_col = 0, treeheight_row = 35, treeheight_col = 7, show_rownames = F)
+
+```
+
+For non-centered data. This preserves natural expression variation across replicates. Therefore grouping genes by expression quantification isn't a direct effect of the mutation and may just be random noise. Maybe not as informative.
+```{r include = TRUE, message = FALSE, warning = FALSE}
+  ## Perform hierarchical clustering on the un-centered transcriptional profiles; use Euclidean distance
+Euclid_dist_order = hclust(dist(Short_Profile[,2:9], method = "euclidean"))$order
+
+  ## Find gene names
+Euclid_dist_ord_Genes = c(Short_Profile$GeneID[Euclid_dist_order])
+
+  ## Re-arrange the clustered profiles into a format compatible with heatmap construction
+Corr = Short_Profile %>%
+  mutate(GeneID = factor(GeneID, levels = Euclid_dist_ord_Genes)) %>%
+  arrange(GeneID)
+
+  ## Find where Tmem is
+which(Euclid_dist_ord_Genes == "Tmem184b") # 3213
+```
+
+```{r include = TRUE, message = FALSE, warning = FALSE}
+  ## Create a heatmap around Tmem
+pheatmap(mat = Corr[3193:3233,2:9], color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)), clustering_distance_rows = "euclidean", clustering_distance_cols = "euclidean", angle_col = 0, treeheight_row = 35, treeheight_col = 7, labels_row = Euclid_dist_ord_Genes[3193:3233])
+
+```
+
+
+
+## Gene Co-expression Network Prep
+
+First, create a function that will remove NaNs that affect the construction of the network and prevents mathematical operations.
+
+* This depends on how many conditions and replicates there are in the dataset. In this example, 2 conditions (WT/Mut), 4 replicates each.
+
+This function will return a cleaned dataframe to the global environment, titled `Expression_Profile_cleaned`. It excludes genes that generate NaNs because the genes have 0s across replicates
+
+``` {r include = TRUE, message = FALSE, warning = FALSE, echo = FALSE}
+## Remove genes that generate NANs ##
+  ## Create a function that takes the Expression Data, which downstream analysis to perform (WT, Mut, or All), and removes genes with too many 0s that will create NANs (dividing by 0)
+Remove_NAN_Generators = function(Expression_Profile, Samples_to_Compare){
+  
+  ## Classify which analysis to determine dataframe subset
+  
+  #MutAdultItchExp = RNASeqRepResultsAdultAll[,grep(names(RNASeqRepResultsAdultAll), pattern = "GeneID|Mut")]
+  #WTAdultItchExp = RNASeqRepResultsAdultAll %>% select(starts_with(GeneID) & ends_with(WT4))
+  
+  if (Samples_to_Compare == "WT" ){
+    Expression_Profile = Expression_Profile[,grep(names(Expression_Profile), pattern = "GeneID|WT")]
+  } else if (Samples_to_Compare == "Mut"){
+    Expression_Profile = Expression_Profile[,grep(names(Expression_Profile), pattern = "GeneID|Mut")]
+  } else if (Samples_to_Compare == "All"){
+    Expression_Profile = Expression_Profile
+  } else {
+    Expression_Profile = Expression_Profile
+  }
+  ## Run a for-loop to evaluate whether any genes in the dataframe contain all 0s. Store it in the above initialized vector
+  ## For an entire profile
+  if (ncol(Expression_Profile) > 5){
+    for (i in 1:nrow(Expression_Profile)){
+      expcheck[i] = if_else(Expression_Profile[i,2] == 0 & 
+                              Expression_Profile[i,3] == 0 & 
+                              Expression_Profile[i,4] == 0 & 
+                              Expression_Profile[i,5] == 0 &
+                              Expression_Profile[i,6] == 0 &
+                              Expression_Profile[i,7] == 0 &
+                              Expression_Profile[i,8] == 0 &
+                              Expression_Profile[i,9] == 0, "Remove", "Keep")
+    }
+  } 
+  ## For Genotype-specific profile
+  else {
+    for (i in 1:nrow(Expression_Profile)){
+      expcheck[i] = if_else(Expression_Profile[i,2] == 0 & 
+                              Expression_Profile[i,3] == 0 & 
+                              Expression_Profile[i,4] == 0 & 
+                              Expression_Profile[i,5] == 0, "Remove", "Keep")
+    }
+  }
+  ## Find the indeces of those genes to remove (they create NaNs and prevent correlation calculation and hierarchical clustering)
+  which(expcheck == "Remove")
+  Expression_Profile$GeneID[7816]
+  
+  #Removables = Expression_Profile[c(1873,2665,2730,2841,3103,3141,3989,4478,4515,4745,5027,5288,5501,5745,5761,5974,5988,6428,6776,7630,7816,7925,8143,9102,9147,9670,9825,10205,10530,10935),]  
+  
+  ## Filter out "Rest", a developmental TF with 0s across all WT replicates
+  which(Expression_Profile$GeneID == "Rest")
+  
+  if (Samples_to_Compare == "WT") {
+    Expression_Profile_cleaned = Expression_Profile[-7816,]
+  }else if (Samples_to_Compare == "Mut") {
+    Expression_Profile_cleaned = Expression_Profile[-c(4956,8485),]
+  }else if (Samples_to_Compare == "All") {
+    Expression_Profile_cleaned = Expression_Profile
+  }else{
+    Expression_Profile_cleaned = Expression_Profile
+  }
+  ## Export the data that removes the NaNs back to the global environment for further manipulation
+  Expression_Profile_cleaned <<- Expression_Profile_cleaned
+}
+
+  ## Create a vector as long as the expression dataframe for determining additional genes to remove upstream of correlation calculations
+expcheck = as.array(vector(length = nrow(Short_Profile)))
+```
+
+Remove NaN-generating genes by running that function.
+```{r include = TRUE, warning = FALSE, message = FALSE, echo = TRUE}
+Remove_NAN_Generators(Expression_Profile = Short_Profile, Samples_to_Compare = "All")
+```
+
+
+Use the "cleaned" profile to find what power to raise a correlation (also called an adjacency) matrix.
+
++ By increasing the exponent power, it can increase the "connectivity" of more related genes from those less related.
+
+Use the WGCNA function, `pickSoftThreshold`, to compute model fits of a range of exponent powers and compute the "connectivity" metrics of the data based on these power values.
+The following code will produce plots.
+```{r include = TRUE, warning = FALSE, message = FALSE, echo = TRUE}
+
+powers = c(seq(4,10,by=1), seq(12,20, by=2))
+
+powerTable = list(data = pickSoftThreshold(data = t(Expression_Profile_cleaned[,2:9]), powerVector = powers, verbose = 2))
+collectGarbage()
+colors = c("black")
+plotCols = c(2,5,6,7)
+colNames = c("Scale Free Topology Model Fit", "Mean connectivity", "Median connectivity", "Max connectivity")
+
+  ## Re-arrange the data output of the soft thresholding function into a dataframe for graphics and analysis
+Topology_df = data.frame(powerTable$data$fitIndices[1],
+                         powerTable$data$fitIndices[2], 
+                         powerTable$data$fitIndices[3], 
+                         powerTable$data$fitIndices[4], 
+                         powerTable$data$fitIndices[5], 
+                         powerTable$data$fitIndices[6], 
+                         powerTable$data$fitIndices[7], stringsAsFactors = F)
+powerTable$data$powerEstimate
+powerlabels = c(Topology_df$Power)
+
+sizeGrWindow(8,6)
+par(mfcol = c(2,2))
+par(mar = c(4.2,4.2,2.2,0.5))
+cex1 = 0.7
+
+  ## Graph the Scale-Free model fit as a function of soft threshold (power)
+plot(Topology_df$Power, -Topology_df$slope*Topology_df$SFT.R.sq,
+     xlab = "Soft Threshold (power)",
+     ylab = colNames[1], type = "n", 
+     xlim = c(min(Topology_df$Power), max(Topology_df$Power)),
+     ylim = c(0,5), main = colNames[1])
+addGrid()
+text(Topology_df$Power, -Topology_df$slope*Topology_df$SFT.R.sq, labels = powers)
+
+  ## Graph the mean connectivity as a function of soft threshold (power)
+plot(Topology_df$mean.k., -Topology_df$slope*Topology_df$mean.k.,
+     xlab = "Soft Threshold (power)",
+     ylab = colNames[2], type = "n",
+     xlim = c(min(Topology_df$Power), max(Topology_df$Power)),
+     ylim = c(min(-Topology_df$slope*Topology_df$mean.k.), max(-Topology_df$slope*Topology_df$mean.k.)), main = colNames[2])
+addGrid()
+text(Topology_df$Power, -(Topology_df$slope)*Topology_df$mean.k., labels = powers)
+
+  ## Graph the median connectivity as a function of soft threshold (power)
+plot(Topology_df$median.k., -Topology_df$slope*Topology_df$median.k.,
+     xlab = "Soft Threshold (power)", ylab = colNames[3], type = "n",
+     xlim = c(min(Topology_df$Power), max(Topology_df$Power)),
+     ylim = c(min(-Topology_df$slope*Topology_df$median.k.), max(-Topology_df$slope*Topology_df$median.k.)), main = colNames[3])
+addGrid()
+text(Topology_df$Power, -(Topology_df$slope)*Topology_df$median.k., labels = powers)
+
+  ## Graph the maximum connectivity as a function of soft threshold (power)
+plot(Topology_df$max.k., -Topology_df$slope*Topology_df$max.k.,
+     xlab = "Soft Threshold (power)", ylab = colNames[4], type = "n",
+     xlim = c(min(Topology_df$Power), max(Topology_df$Power)),
+     ylim = c(min(-Topology_df$slope*Topology_df$max.k.), max(-Topology_df$slope*Topology_df$max.k.)), main = colNames[4])
+addGrid()
+text(Topology_df$Power, -(Topology_df$slope)*Topology_df$max.k., labels = powers)
+  #### Balance the maximum connectivity loss with the scale free topology gain. --> Use power of 4-7
+```
+
+The "scale-free model fit" graphed as a function of soft threshold (aka power) should have a y-axis ranging from 0 - 1. Anything larger than this indicates a noisy dataset, suggesting an overfit or noisy model.  
+
+In general, this graph should also resemble a log curve. A power selection should be made before a horizontal asymptote.
+
+  + This should also be reflected in the maximum connectivity graphed as a function of power (power selection that retains the most connectivity before it "bottoms out" asymptotically).
+
+The command `powerTable$data$powerEstimate` provides a suggested power selection for the correlation/adjacency matrix. Usually the power is 4-7, anyway.
+
+## Create the Adjacency and Topological Overlap Matrices (TOM)
+
+The adjacency is a square matrix where the Pearson correlation of every gene pair is calculated.
+Raise it to the power as determined above (6) to amplify genes that correlate better as opposed to genes that don't correlate well.
+
+``` {r include = TRUE, message = FALSE, warning = FALSE}
+  ## Create a weighted adjacency (no absolute value of the correlations raised to a power)
+  ## Remember to transpose the expression matrix
+ADJ = cor(t(Expression_Profile_cleaned[,2:9]), method = "pearson")^6
+rownames(ADJ) = Expression_Profile_cleaned$GeneID ## Append gene names for the rows
+colnames(ADJ) = Expression_Profile_cleaned$GeneID ## Append gene names for the columns
+```
+
+Create the signed TOM. If power were odd-numbered, then the TOM would contain both positive and negative values.  
+
+* Think of a TOM as an adjacency with context: the correlation of gene pairs in the context of their neighbors, extrapolated to all genes.
+  + Example: if looking at a 4-gene module, genes **A**, **B**, **C**, **D**, where **Gene A** and **Gene B** directly relate (high correlation), **Gene C** and **Gene D** directly relate, and **Gene B** and **Gene C** are related, the matrix scores the modules' similarity and weights the direct links strongest
+    
+    
+``` {r include = TRUE, message = FALSE, warning = FALSE}
+  ## Create the topological overlap matrix using the WGCNA function "TOMsimilarity": converts an adjacency into a TOM
+TOM = TOMsimilarity(adjMat = ADJ, TOMType = "signed")
+rownames(TOM) = rownames(ADJ)
+colnames(TOM) = colnames(ADJ)
+```
+
+Create the signed dissimilarity TOM; some find this better segregates modules
+
+```{r include = TRUE, message = FALSE, warning = FALSE}
+  ## Create the topological overlap dissimilarity matrix
+disTOM = 1-TOMsimilarity(adjMat = ADJ, TOMType = "signed")
+rownames(disTOM) = rownames(ADJ)
+colnames(disTOM) = rownames(ADJ)
+
+```
+
+## Visualize the WGCNAs
+
+Visualize the results to evaluate the constructed network(s)
+
+``` {r include = TRUE, message = FALSE, warning = FALSE}
+
+  ## Create a hierarchically clustered dendrogram based on the DISsimilarity (of the TOM); distinguishes clusters better than similarity
+Tree = hclust(as.dist(disTOM), method = "average")
+  ## Determine clusters to plot based on a "dynamic dendrogram cut"
+unmergedLabs = cutreeDynamic(dendro = Tree, distM = disTOM,
+                             deepSplit = 1,
+                             cutHeight = 0.995,
+                             pamRespectsDendro = F)
+
+  ## Convert the clusters from index labels to colors
+unmergedCols = labels2colors(unmergedLabs)
+  ## Merge clusters that are similar enough based on the subjective/arbitrary "cutHeight" parameter provided within the WGCNA function, "mergeCloseModules"
+merge = mergeCloseModules(t(Expression_Profile_cleaned[,2:9]), unmergedLabs, cutHeight = 0.10, verbose = 2) ## cutHeight is the parameter that determines closeness of modules; a smaller cutHeight is more selective- closer to 1 merges more unrelated modules
+
+  ## Convert color indeces into a string
+moduleLabs = merge$colors
+  ## Convert the string of labels into colors
+moduleCols = labels2colors(moduleLabs)
+  ## Find the new, merged eigenvectors (modules)
+MEs = merge$newMEs
+
+#t(Expression_Profile_cleaned[,2:9])
+
+  ## Find Tmem index
+which(Expression_Profile_cleaned$GeneID == "Tmem184b")
+  ## Plot the dendrogram and associated clusters/modules
+plotDendroAndColors(Tree, cbind(unmergedCols, moduleCols), 
+                    c("Unmerged Modules", "Merged Modules"), 
+                    dendroLabels = F, 
+                    hang = 0.001,
+                    addGuide = T,
+                    guideHang = 0.001,
+                    main = "Tmem GT DRG Dendrogram")
+```
+
+Investigate the Tmem modules:
+
+``` {r include = TRUE, message = FALSE, warning = FALSE}
+#which(Expression_Profile_cleaned$GeneID == "Il31ra") ## For finding the modules of genes of interest
+  ## Determine Tmem's modules
+moduleCols[4395]
+unmergedCols[4395]
+
+  ## Find the indeces from the clustered data of genes within Tmem's clusters
+TmemUnmergedModule = c(which(unmergedCols == "yellow"))
+TmemModule = c(which(moduleCols == "brown"))
+  ## Find the genes of those indeces
+TmemUnmergedModule = c(Expression_Profile_cleaned$GeneID[TmemUnmergedModule])
+TmemModule = c(Expression_Profile_cleaned$GeneID[TmemModule])
+```
+
+``` {r include = TRUE, message = FALSE, warning = FALSE}
+  ## The adjacency values of the genes in the unmerged Tmem module. High values mean higher similarity
+ADJ[4395,c(which(unmergedCols == "yellow"))]
+```
+
+``` {r include =TRUE, message = FALSE, warning = FALSE}
+  ## The TOM values of the genes in the unmerged Tmem module. High values mean higher similarity
+TOM[4395, c(which(unmergedCols == "yellow"))]
+```
+
+``` {r include = TRUE, message = FALSE, warning = FALSE}
+  ## The disTOM values of the genes in the unmerged Tmem module. Low values mean higher similarity
+disTOM[4395, c(which(unmergedCols == "yellow"))]
+```
+
+Plot the TOM:
+``` {r include = TRUE, message = FALSE, warning = FALSE}
+  ## Create a dendrogram compatible with TOM-TOM plot creation
+colorDynamicTOM = labels2colors(cutreeDynamic(Tree, method ="tree"))
+  ## Make the diagonal of the TOM NA to re-scale the plot
+diag(disTOM) = 0
+  ## Create the TOM-TOM plot
+TOMplot((disTOM^3), Tree, as.character(moduleCols), main = "Dissim. TOM Plot Top5000 Genes")
+```
+
+Analyze the genes in the merged module using enrichr with the Enrichr_Analysis script and function
