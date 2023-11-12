@@ -538,11 +538,23 @@ GO_INFO_fn = function(list_of_interest, species) {
   # GO df storage for all GOs ----
   ## Find all the genes/proteins within the list of terms
   
-  GO.list = mapIds(org.Hs.eg.db,
-                   keys = Unique_GO_IDs[],
-                   keytype = "GOALL",
-                   column = "SYMBOL",
-                   multiVals = "list")
+  if (species == "human"){
+    
+    GO.list = mapIds(org.Hs.eg.db,
+                     keys = Unique_GO_IDs[],
+                     keytype = "GOALL",
+                     column = "SYMBOL",
+                     multiVals = "list")
+    
+  } else if (species == "mouse") {
+    
+    GO.list = mapIds(org.Mm.eg.db,
+                     keys = Unique_GO_IDs[],
+                     keytype = "GOALL",
+                     column = "SYMBOL",
+                     multiVals = "list")
+    
+  }
   
   ## Put the information into a matrix
   GO_INFO = matrix(nrow = length(Unique_GOs), ncol = 6)

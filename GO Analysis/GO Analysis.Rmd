@@ -18,7 +18,7 @@ multiple datasets generated in the lab of **Dr. Martha Bhattacharya**,
 two of which have been used for publications
 ([here](https://journals.lww.com/pain/abstract/2022/05000/transmembrane_protein_tmem184b_is_necessary_for.18.aspx),
 [here](https://www.biorxiv.org/content/10.1101/2022.05.27.493793v3#:~:text=Taken%20together%2C%20our%20data%20suggest%20that%20TMEM184B%20is,be%20linked%20to%20neurodevelopmental%20disorders%20than%20to%20dementia.)).
-The totality of the example dataset is private (preliminary, unpublished data).
+
 
 + `Gene ontology` and `pathway enrichment analyses` provide high-level analysis of the cell/mol consequences following
 perturbations (genetic or pharmacological) of interest. This is incredibly powerful for studying novel proteins.
@@ -128,104 +128,79 @@ library(splines)
 
 Import data (not shown)
 
-```{r Import data, include = T, warning = F, message = F, echo = F}
-All_DF_annot = read_csv("C:/Users/Erik/Desktop/BoxCopy/Lab/Omics/MS/All_DF_annot.csv")
+```{r Import data, include = T, warning = F, message = F, echo = T}
+aDRG = read_csv("~/GitHub/ggplot-scripts/Bioinformatics/RNAseq Data Files/DESeq2 Expression Results.csv")
 
-whittled_candidates_list = All_DF_annot %>%
-  dplyr::filter(p.o.i. == "Hits") %>%
-  dplyr::select(HumanGeneID) %>%
+  ## Filter (subset) genes that went undetected or were outliers in terms of counts;
+  ## new dataframe should not contain any NAs in p-value columns
+aDRG_sub = subset(aDRG, (!is.na(aDRG[,"AdjP"])))
+ ## Filter the DEGs by removing rRNAs and mitochondrial tRNAs, along with pseudogenes, etc.
+aDRG_sub = aDRG_sub %>% filter(!grepl(GeneID,
+                                pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
+#mt.+.?$|  <-- string identifier for mitochondrial tRNAs
+
+  ## Create a column in the DESeq2 dataframe that scales the Adjusted P-value by log-base 10
+aDRG_sub$log10ADJP = -log10(aDRG_sub$AdjP)
+
+  ## Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
+aDRG_sub = aDRG_sub %>%
+  dplyr::mutate(log10ADJP = -log10(AdjP),
+                g.o.i. = GeneID,
+                g.o.i. = case_when(AdjP <= 0.05 ~ "DEGs",
+                                   TRUE ~ "Non-DEGs"),
+                labs = case_when(GeneID == "Tmem184b" ~ "Tmem184b",
+                                 TRUE ~ ""))
+
+aDRG_DEG_list = aDRG_sub %>%
+  dplyr::filter(g.o.i. == "DEGs") %>%
+  dplyr::select(GeneID) %>%
   as.vector() %>%
   unlist() %>%
   as.character()
 
-rm(list = ls()[which(grepl(ls(), pattern = "All_DF_annot|whittled_candidates_list") == F)])
-
-All_DF_annot = All_DF_annot %>%
-  dplyr::mutate(p.o.i. = case_when(HumanGeneID == "TMEM184B" ~ "Target Bait",
-                                   HumanGeneID == "GFP" ~ "Control Bait",
-                                   HumanGeneID == "birA" ~ "Control Bait",
-                                   grepl(p.o.i., pattern = "Hits") ~ "Hits",
-                                   TRUE ~ "Background"),
-                labs = case_when(!is.na(labs) & HumanGeneID == "TMEM184B" ~ "Target Bait",
-                                 !is.na(labs) & HumanGeneID != "TMEM184B" ~ "Control Bait",
-                                 TRUE ~ ""),
-                Targetavg = TMEMavg) %>%
-  dplyr::select(-1)
 ```
 
 Source functions
 
 ```{r Source Functions, include = T, warning = F, message = F, echo = T}
-source("~/GitHub/Proteomics/Functions/GO Analysis Functions.R")
-source("~/GitHub/Proteomics/Functions/IPMS Functions.R")
-```
-
-## Data Analysis
-
-1. Wrangle the example proteomics data (not shown)
-
-2. Pass the data-wrangled output into an analysis function that narrows the list of proteins of interest (not shown; [snippet here](https://github.com/eriklarsen4/Proteomics/blob/go-analysis-only-rev/IPMS%20Data%20Wrangling%20and%20Analysis/IPMS%20Data%20Processing.md) is still under revision)
-
-3. Filter the dataset. The example list of proteins for this snippet are derived here
-
-```{r Filter candidates, include = T, message = F, warning = F, echo = T}
-  ## Remove "RNA polymerase" proteins, translation-related proteins, heat shock proteins, histone proteins, tRNA proteins
-All_DF_annot = All_DF_annot %>% 
-  as_tibble() %>%
-  filter(
-    !grepl(
-      `Identified Proteins (6388)`,
-      pattern = "RNA polymerase|Eukaryotic initiation|Eukaryotic elongation|Heat shock|Histone|tRNA|",
-      fixed = TRUE
-      )
-    )
-
-  ## Sort by descending FC
-All_DF_annot = All_DF_annot %>%
-  dplyr::arrange(desc(FC))
-  ## Re-order the index
-row.names(All_DF_annot) = NULL
+source("~/GitHub/RNAseq/Functions/GO Analysis Functions.R")
 ```
 
 ## Visualize Dataset
 
-The "`Hits`" in blue below will be used as the example list of proteins for the `GO_INFO_fn`
+Visualize the filtered dataset, highlighting the differentially expressed genes (gold)
+
+**The DEGs are the genes used as the list in this analysis**
 
 ```{r Generate ggplot object, include = T, warning = F, message = F, echo = F}
   ## Create the plot. Save it as a variable; add appropriate layers
-All_FC = ggplot(data = All_DF_annot) +
-  geom_point(data = subset(All_DF_annot, p.o.i. == "Background"),
-             aes(x = Controlavg,
-                 y = Targetavg,
-                 color = p.o.i.),
+volcano_1 = ggplot(data = aDRG_sub) +
+  geom_point(data = subset(aDRG_sub, g.o.i. == "Non-DEGs"),
+             aes(x = `log2(FC)`,
+                 y = log10ADJP,
+                 color = g.o.i.),
              alpha = 0.1) +
-  geom_point(data = subset(All_DF_annot, p.o.i. == "Hits"),
-             aes(x = Controlavg,
-                 y = Targetavg,
-                 color = p.o.i.),
-             alpha = 0.5) +
-  geom_point(data = subset(All_DF_annot, p.o.i. == "Control Bait"),
-             aes(x = Controlavg,
-                 y = Targetavg,
-                 color = p.o.i.),
-             alpha = 1.0) +
-  geom_point(data = subset(All_DF_annot, p.o.i. == "Target Bait"),
-             aes(x = Controlavg,
-                 y = Targetavg,
-                 color = p.o.i.),
-             alpha = 1.0) +
-  coord_cartesian(xlim = c(0,7.5), ylim = c(0,7.5)) +
-  labs(x = "Avg. TSCs in Control IP",
-       y = "Avg. TSCs in Target IP",
-       title = "IP-MS",
-       col = "Protein\nCategory") +
-  scale_color_manual(values = c("gray48",
-                                "darkgoldenrod3",
-                                "navy",
-                                "darkgoldenrod4")) +
+  geom_point(data = subset(aDRG_sub, g.o.i. == "DEGs"),
+             aes(x = `log2(FC)`,
+                 y = log10ADJP,
+                 color = g.o.i.),
+             alpha = 0.3) +
+  coord_cartesian(xlim = c(min(aDRG_sub$`log2(FC)`),
+                           max(aDRG_sub$`log2(FC)`)),
+                  ylim = c(0,max(aDRG_sub$log10ADJP))) +
+  geom_hline(yintercept = min(aDRG_sub$log10ADJP[which(aDRG_sub$g.o.i. == "DEGs")]),
+             linetype = "dashed",
+             color = "firebrick") +
+  geom_text(x = -3, y = 4,
+            label = "FDR \U2264 0.05",
+            color = "firebrick", size = 3) +
+  labs(title = expression(paste(italic("Tmem184b")^"GT/GT", " DRG mRNA Exp. Changes")),
+       x = "log2 (FC) rel. to WT",
+       y = "-log10 (Adj.P-val)",
+       col = "Gene Data Type") +
   theme_bw() +
-  
-  geom_abline(intercept = 0, slope = 2, linetype = "dashed", color = "firebrick") +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = c(0.90,0.87)) + 
+  scale_color_manual(values = c("darkgoldenrod4", "gray48"))+ 
   geom_text(x = 3, y = 7.5, label = "Fold Change \u2265 2", color = "firebrick", size = 4) +
   theme(panel.grid = element_blank(),
         plot.title = element_text(hjust = 0.5, size = 20),
@@ -236,16 +211,16 @@ All_FC = ggplot(data = All_DF_annot) +
         legend.title = element_blank())
 
   ## Overwrite to add labels
-All_FC = All_FC  + geom_text_repel(data = All_DF_annot,
-                                   x = All_DF_annot$Controlavg,
-                                   y = All_DF_annot$Targetavg,
+volcano_1 = volcano_1  + geom_text_repel(data = aDRG_sub,
+                                   x = aDRG_sub$`log2(FC)`,
+                                   y = aDRG_sub$log10ADJP,
                                    color = "black",
                                    aes(label = labs),
                                    size = 4, max.overlaps = Inf)
 ```
 
-```{r Scatter plot of potential hits, include = T, warning = F, message = F, echo = F, render = T}
-All_FC
+```{r Plot the Volcano, include = T, warning = F, message = F, echo = F, render = T}
+volcano_1
 ```
 
 # GO Analysis on List of Interest {.tabset .tabset-pills .tabset-fade}
@@ -292,9 +267,9 @@ One approach to GO Analysis is by determining `GO Term` or `Pathway` `Over-repre
 
 ## GO_INFO_fn
 
-```{r Pass the IPMS list into the GO_INFO_fn, include = T, message = F, warning = F, echo = T}
-GO_INFO_fn(list_of_interest = whittled_candidates_list,
-           species = "human")
+```{r Pass the DEG list into the GO_INFO_fn, include = T, message = F, warning = F, echo = T}
+GO_INFO_fn(list_of_interest = aDRG_DEG_list,
+           species = "mouse")
 ```
 
 ## GO Overlap
@@ -407,6 +382,7 @@ for (i in 1:nrow(GO_INFO_by_TERM_df) ) {
        (as.numeric(length(list_of_interest))/GO_INFO_by_TERM_df$Num_Genes_in_Term[i])
   }
 }
+
 ```
 
 ## Plot Probability Distributions
@@ -789,19 +765,21 @@ GO_Bar = GO_INFO_by_TERM_df %>%
                   gam_fit_on_weighted_gam_preds))
 
 GO_Bar = GO_Bar %>% 
-  dplyr::mutate(GO_Term = case_when(grepl(GO_Term, pattern = "V0 domain") ~
-                                        "vacuolar protein-transporting\nV-type ATPase, V0 domain",
-                                      grepl(GO_Term, pattern = "retrograde transport") ~
-                                        "retrograde transport,\nvesicle recycling within Golgi",
-                                      grepl(GO_Term, pattern = "ubiquitin") ~
-                                        "ubiquitin-independent protein\ncatabolic process via the multivesicular\nbody sorting pathway",
-                                      grepl(GO_Term, pattern = "negative regulation") ~
-                                        "negative regulation of\nmammary gland epithelial cell proliferation",
-                                      grepl(GO_Term, pattern = "late endosome") ~
-                                        "late endosome to lysosome transport\nvia multivesicular body sorting pathway",
+  dplyr::mutate(GO_Term = case_when(GO_Term == "regulation of CDP-diacylglycerol-serine O-phosphatidyltransferase activity" ~
+                                        "regulation of CDP-diacylglycerol-serine\nO-phosphatidyltransferase activity",
+                                      grepl(GO_Term, pattern = "positive regulation of CDP-diacylglycerol-serine O-phosphatidyltransferase activity") ~
+                                        "positive regulation of CDP-diacylglycerol-serine\nO-phosphatidyltransferase activity",
+                                      grepl(GO_Term, pattern = "positive regulation of serine C-palmitoyltransferase activity") ~
+                                        "positive regulation of\nserine C-palmitoyltransferase activity",
+                                      grepl(GO_Term, pattern = "intrinsic component of neuronal") ~
+                                        "intrinsic component of\nneuronal dense core vesicle membrane",
+                                      grepl(GO_Term, pattern = "intrinsic component of dense") ~
+                                        "intrinsic component of\ndense core granule membrane",
+                                      grepl(GO_Term, pattern = "integral component") ~
+                                        "integral component of\nneuronal dense core vesicle membrane",
                                       TRUE ~ GO_Term))
 GO_Bar %>%
-  ggplot(aes(x = reorder(GO_Bar$GO_Term, GO_Bar$Weighted_Overlap_Prob),
+  ggplot(aes(x = reorder(GO_Bar$GO_Term, -GO_Bar$Weighted_Overlap_Prob),
              y = GO_Bar$Weighted_Overlap_Prob)) +
   geom_col(stat = `identity`, aes(fill = `Weighted_Overlap_Prob`))+
   scale_fill_continuous(name = "Weighted\nOverlap\nProbability")+
@@ -844,7 +822,7 @@ GO_INFO_by_TERM_df %>%
 
 But when removing highly specific `GO Terms` (with only 1 gene) and arranging by the least probable weighted overlap, the results are incredibly plausible:
 
-`GO Term`s we suspect to be intimately and robustly releated to the target protein are *incredibly improbable* to be associated with the target protein by chance
+We confirmed `GO Term`s we suspected to be intimately and robustly releated to the *Tmem184b*, specifically, `C-fibers`, and `oncostatin-M-mediated signialing pathway`
 
 ```{r Export Results, include = F, warning = F, message = F, echo = F}
 
