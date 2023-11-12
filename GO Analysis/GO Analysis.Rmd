@@ -1,0 +1,831 @@
+---
+title: "Gene Ontology Analysis Snippet"
+author: "Erik Larsen"
+date: "9/17/2021"
+output: 
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: yes
+    numbered_sections: yes
+    code_folding: hide
+---
+
+# Overview
+
+This markdown serves as documentation of gene ontology analysis of
+multiple datasets generated in the lab of **Dr. Martha Bhattacharya**,
+two of which have been used for publications
+([here](https://journals.lww.com/pain/abstract/2022/05000/transmembrane_protein_tmem184b_is_necessary_for.18.aspx),
+[here](https://www.biorxiv.org/content/10.1101/2022.05.27.493793v3#:~:text=Taken%20together%2C%20our%20data%20suggest%20that%20TMEM184B%20is,be%20linked%20to%20neurodevelopmental%20disorders%20than%20to%20dementia.)).
+
+
++ `Gene ontology` and `pathway enrichment analyses` provide high-level analysis of the cell/mol consequences following
+perturbations (genetic or pharmacological) of interest. This is incredibly powerful for studying novel proteins.
+
+  + As such, the approach has a few **problems**:
+  
+    1.  When analyzing a list of genes or proteins quantitatively changed by a perturbation,
+        implicated biological processes or pathways depend on a database's curation of data
+        and the user's knowledge of biological processes or pathways.
+
+    2.  Genes and proteins have aliases; these can cause discrepancies
+        missed by researchers querying gene ontologies when their
+        supplied list does not contain the “correct” alias
+        
+        + i.e. `GO Terms` may be associated with some genes/proteins
+          but not all aliases
+
+    3.  Some genes/proteins may have been mistakenly omitted from a
+        `GO Term`
+
+    4.  It's probably useful to understand putative connections between a
+        given gene/protein & its gene ontologies with *other*
+        genes/proteins & *their* gene ontologies— in particular,
+        accounting for as many aliases as possible
+
+        -   If a user is interested in a manipulation’s effect on cellular
+            processes, this approach may help better connect otherwise
+            unconnected genes/proteins to other pathways/processes
+  
+  + Thus, I created multiple functions, harnessing the `GO database`’s
+    repository, but with more flexibility than just plugging and chugging into
+    `geneontology.org`'s or `enrichr`'s websites
+    
+  + This snippet demonstrates the creation and use of one particular
+    function (another that addresses issues is documented [here]()):
+
+    + `GO_INFO_fn`, for performing the statistical analyses of the
+      genes/proteins in a provided list
+      
+      + More specific questions and their follow-up functions to the `GO_INFO_fn`
+        are specified in the `Additional Functions` tab of the `Function definitions` section below
+
+# Function definitions {.tabset .tabset-pills .tabset-fade}
+
+## GO_INFO_fn
+
++ For the GO and pathway over-representation analysis of a list of interest (e.g. analysis of differentially expressed genes)
+
++ The `GO_INFO_fn` takes, as input:
+    +   a list of gene or protein IDs
+    +   the species of the list
+
++ it returns to the Global Environment:
+  
+  + a dataframe, `GO_INFO_by_GENE_df`, that houses:
+    + each gene/protein from a provided list (the input list)
+      + all the `# of GO Terms` to which a gene/protein has been annotated by the `GO.db`
+      + all the `GO IDs` to which a gene/protein has been annotated by the `GO.db`
+      + all the `GO Terms` to which a gene/protein has been annotated by the `GO.db`
+      
+  + a list (`Unique_GOs`) of all the unique `GO Terms` associated with the entire list
+  
+  + the supplied list of interest, removing genes/proteins that do
+    not have terms associated with it ( = `list_of_interest`)
+
+## Additional Functions
+The `GO_INFO_by_GENE_df` houses information that can then be used for more targeted questions,
+using other functions, such as:
+
++ Are there any enriched `GO Terms` from the supplied list?
+
+  + if yes, what are they? ( use
+    `Find_Enriched_GOs_from_GO_INFO_df_fn`)
+
+  + Which genes/proteins from the list of interest are associated with a
+    specific `GO Term`? ( use `Find_Genes_With_X_GO_Term_fn`)
+
+  + Which `GO Terms` are associated with a specific gene/protein from
+    the supplied list? ( use `Find_GOs_of_Gene_X_fn`)
+
+  + What are the `GO Terms` of two genes/proteins of from the supplied
+    list? ( use `Find_GOs_of_Two_Genes_fn`)
+
+  + Which `GO Terms` are shared by all genes/proteins from the supplied
+    list? ( use `Find_Genes_Related_By_GO_Term_fn`)
+
+# Example Environment Prep {.tabset .tabset-pills .tabset-fade}
+
+## Load packages and data
+
+Load packages
+
+```{r Load Packages, include = T, warning = F, message = F, echo = T}
+library(stringr)
+library(ggplot2)
+library(ggrepel)
+# library(enrichR)
+library(org.Mm.eg.db)
+library(org.Hs.eg.db)
+library(GO.db)
+library(tidyverse)
+# library(tidyr)
+library(ggpubr)
+library(mgcv)
+library(splines)
+```
+
+Import data (not shown)
+
+```{r Import data, include = T, warning = F, message = F, echo = T}
+aDRG = read_csv("~/GitHub/ggplot-scripts/Bioinformatics/RNAseq Data Files/DESeq2 Expression Results.csv")
+
+  ## Filter (subset) genes that went undetected or were outliers in terms of counts;
+  ## new dataframe should not contain any NAs in p-value columns
+aDRG_sub = subset(aDRG, (!is.na(aDRG[,"AdjP"])))
+ ## Filter the DEGs by removing rRNAs and mitochondrial tRNAs, along with pseudogenes, etc.
+aDRG_sub = aDRG_sub %>% filter(!grepl(GeneID,
+                                pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
+#mt.+.?$|  <-- string identifier for mitochondrial tRNAs
+
+  ## Create a column in the DESeq2 dataframe that scales the Adjusted P-value by log-base 10
+aDRG_sub$log10ADJP = -log10(aDRG_sub$AdjP)
+
+  ## Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
+aDRG_sub = aDRG_sub %>%
+  dplyr::mutate(log10ADJP = -log10(AdjP),
+                g.o.i. = GeneID,
+                g.o.i. = case_when(AdjP <= 0.05 ~ "DEGs",
+                                   TRUE ~ "Non-DEGs"),
+                labs = case_when(GeneID == "Tmem184b" ~ "Tmem184b",
+                                 TRUE ~ ""))
+
+aDRG_DEG_list = aDRG_sub %>%
+  dplyr::filter(g.o.i. == "DEGs") %>%
+  dplyr::select(GeneID) %>%
+  as.vector() %>%
+  unlist() %>%
+  as.character()
+
+```
+
+Source functions
+
+```{r Source Functions, include = T, warning = F, message = F, echo = T}
+source("~/GitHub/RNAseq/Functions/GO Analysis Functions.R")
+```
+
+## Visualize Dataset
+
+Visualize the filtered dataset, highlighting the differentially expressed genes (gold)
+
+**The DEGs are the genes used as the list in this analysis**
+
+```{r Generate ggplot object, include = T, warning = F, message = F, echo = F}
+  ## Create the plot. Save it as a variable; add appropriate layers
+volcano_1 = ggplot(data = aDRG_sub) +
+  geom_point(data = subset(aDRG_sub, g.o.i. == "Non-DEGs"),
+             aes(x = `log2(FC)`,
+                 y = log10ADJP,
+                 color = g.o.i.),
+             alpha = 0.1) +
+  geom_point(data = subset(aDRG_sub, g.o.i. == "DEGs"),
+             aes(x = `log2(FC)`,
+                 y = log10ADJP,
+                 color = g.o.i.),
+             alpha = 0.3) +
+  coord_cartesian(xlim = c(min(aDRG_sub$`log2(FC)`),
+                           max(aDRG_sub$`log2(FC)`)),
+                  ylim = c(0,max(aDRG_sub$log10ADJP))) +
+  geom_hline(yintercept = min(aDRG_sub$log10ADJP[which(aDRG_sub$g.o.i. == "DEGs")]),
+             linetype = "dashed",
+             color = "firebrick") +
+  geom_text(x = -3, y = 4,
+            label = "FDR \U2264 0.05",
+            color = "firebrick", size = 3) +
+  labs(title = expression(paste(italic("Tmem184b")^"GT/GT", " DRG mRNA Exp. Changes")),
+       x = "log2 (FC) rel. to WT",
+       y = "-log10 (Adj.P-val)",
+       col = "Gene Data Type") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = c(0.90,0.87)) + 
+  scale_color_manual(values = c("darkgoldenrod4", "gray48"))+ 
+  geom_text(x = 3, y = 7.5, label = "Fold Change \u2265 2", color = "firebrick", size = 4) +
+  theme(panel.grid = element_blank(),
+        plot.title = element_text(hjust = 0.5, size = 20),
+        legend.position = c(0.85,0.5),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 15),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank())
+
+  ## Overwrite to add labels
+volcano_1 = volcano_1  + geom_text_repel(data = aDRG_sub,
+                                   x = aDRG_sub$`log2(FC)`,
+                                   y = aDRG_sub$log10ADJP,
+                                   color = "black",
+                                   aes(label = labs),
+                                   size = 4, max.overlaps = Inf)
+```
+
+```{r Plot the Volcano, include = T, warning = F, message = F, echo = F, render = T}
+volcano_1
+```
+
+# GO Analysis on List of Interest {.tabset .tabset-pills .tabset-fade}
+
+Conduct GO Analysis on the example list above using the `GO_INFO_fn`:
+
+-   queries the `GO.db` and extracts `Terms` and `IDs` associated with genes/proteins in a provided list
+
+-   output is `GENE_GO_INFO_df` (gene-wise GO information) and
+    `GO_INFO_by_TERM_df` (term-wise GO information) in the Global Environment
+
+One approach to GO Analysis is by determining `GO Term` or `Pathway` `Over-representation`, meaning:
+
+- finding the probability that a particular `GO Term`/`Pathway` is more likely than chance to be over- or under-represented in the provided list
+  
+- To find this probability, we first need to:
+  
+  + determine the probability of observing the genes/proteins from the supplied list in a given `Term` (for all `GO Term`s)
+  
+  + these probabilities ("`Overlap_Prob`s") are determined using **Bayes' Theorem**, where:
+        
+    - `Overlap_Prob` = n<sub>genes</sub> from `list of interest` in the
+      given `GO Term` / total_number<sub>genes</sub> in that `GO Term`
+
+  + "`Weighted_Overlap_Prob`s" are computed in an effort to control for list size, heavily annotated genes, and term size, where:
+
+    - `Weighted_Overlap_Prob` = ( (n<sub>genes</sub> from
+    `list of interest` in the given `GO Term`) * (`GO_Term_rate`) *
+    (`Gene_freq` ) ) / (`list length` / `GO Term size`)
+
+    -   `GO_Term_rate` = n<sub>unique_GO_Terms</sub> from
+        `list of interest` / n<sub>total</sub> `GO`s
+
+        - (accounts for the number of `GO Terms` related to the provided list)
+
+    -   `Gene_freq` = sum( P<sub>r</sub> (each gene from
+        `list of interest` arising in *any* `GO Term`) )
+
+        - (accounts for heavily annotated genes i.e. **how often does gene X get annotated to a different GO Term?**)
+
+    -   `GO Term size` = n<sub>total_genes</sub> in a `GO Term`
+
+- Finally, a binomial exact test is conducted for each `GO Term` to assess how likely the observed probability of overlap is when compared to a theoretical probability
+
+## GO_INFO_fn
+
+```{r Pass the DEG list into the GO_INFO_fn, include = T, message = F, warning = F, echo = T}
+GO_INFO_fn(list_of_interest = aDRG_DEG_list,
+           species = "mouse")
+```
+
+## GO Overlap
+
+Find the `Overlap_Prob`s for the list of interest
+
++ To determine these probabilities ("`Overlap_Prob`s"), use **Bayes' Theorem**
+  
++ Assess their distributions, make corrections
+
+```{r v2 GO OverRep Statistical Analyses, include = T, warning = F, message = F, echo = T}
+
+  ## Store GO term information
+for (i in 1:nrow(GO_INFO_by_TERM_df) ) {
+  
+  x = paste(
+    unique(
+      unlist(
+        str_split(as.vector(GO_INFO_by_TERM_df[i, 4]),
+                  pattern = ";")))
+    , collapse = ";")
+  
+  GO_INFO_by_TERM_df[i,3] = length(c(unique(unlist(str_split(as.vector(GO_INFO_by_TERM_df[i, 4]),
+                                                             pattern = ";")
+                                                   )
+                                            )
+                                     )
+                                   )
+  GO_INFO_by_TERM_df[i,4] = x
+  
+}
+
+  ## Store conditional probabilities
+GO_INFO_by_TERM_df = GO_INFO_by_TERM_df %>%
+  dplyr::mutate(Num_Genes_in_Term = as.numeric(Num_Genes),
+                
+                Num_Genes_in_Term_from_List = as.numeric(Num_Genes_from_List),
+                
+                Num_Genes_not_in_Term = max(Num_Genes_in_Term) - Num_Genes_in_Term,
+                
+                Num_Genes_not_in_Term_from_List = as.numeric(length(list_of_interest)) - Num_Genes_in_Term_from_List,
+                
+                Num_Genes_in_Term_not_from_List = Num_Genes_in_Term - Num_Genes_in_Term_from_List,
+                
+                Num_Genes_not_from_List = max(Num_Genes_in_Term) - as.numeric(length(list_of_interest)),
+                
+                Num_Genes_not_in_Term_not_from_List = Num_Genes_not_from_List - Num_Genes_in_Term_not_from_List) %>%
+  
+  dplyr::select(-Num_Genes, -Num_Genes_from_List) %>%
+  dplyr::arrange(desc(Num_Genes_in_Term))
+```
+
+To find over-representation, determine the probabilities that genes from the `list of interest` are found in a given `GO Term`:
+
++ `Overlap_Prob` = n~genes~ from `list of interest` in the given `GO Term` / tot_n~genes~ in that `GO Term`
+
++ `Weighted_Overlap_Prob` = ( (n~genes~ from `list of interest` in the given `GO Term`) * (`GO_Term_rate`) * (`Gene_freq` ) ) / (`list length` / `GO Term size`), where
+
+  + `GO_Term_rate` = n~unique_GO_Terms~ from `list of interest` / n~total~ `GO`s
+
+  + `Gene_freq` = sum( P~r~ (each gene from `list of interest` arising in *any* `GO Term`) )
+
+    - i.e. **how often does gene X get annotated to a different GO Term?**
+
+  + `GO Term size` = n~total_genes~ in a `GO Term`
+
+```{r Generate Overlap Probs, include = T, warning = F, message = F, echo = T}
+
+  ## Initialize variables for generating the weighted overlap probabilities for each term / gene
+
+  ## how frequently they occur across all GO terms
+gene_freq = list()
+
+  ## overlap variables
+
+    ## (aka how many genes in the list of interest were detected in GO Term X? --> Overlap)
+    ## for weighted:
+      ## account for: 
+        ## list size
+        ## term size
+        ## number of unique terms found from list of interest
+        ## how frequently genes from the list are found in any GO terms
+GO_INFO_by_TERM_df = GO_INFO_by_TERM_df %>%
+  dplyr::mutate(Overlap_Prob = (Num_Genes_in_Term_from_List / max(Num_Genes_in_Term)
+                                ),
+                Weighted_Overlap_Prob = NA_real_)
+
+  ## Populate
+for (i in 1:length(list_of_interest)){
+  gene_freq[[i]] = 
+    (
+      as.numeric(GENE_GO_INFO_df$Num_GO_Terms[which(GENE_GO_INFO_df$GeneID == list_of_interest[i])]) /
+        42837
+      )
+}
+names(gene_freq) = c(list_of_interest)
+
+for (i in 1:nrow(GO_INFO_by_TERM_df) ) {
+  for (j in 1:length(GO_INFO_by_TERM_df$Num_Genes_in_Term[i]) ) {
+    
+     GO_INFO_by_TERM_df$Weighted_Overlap_Prob[i] = 
+       
+       ## overlap rate relative to list size
+       (GO_INFO_by_TERM_df$Num_Genes_in_Term_from_List[i]/as.numeric(length(list_of_interest))*
+          ## gene annotation frequency
+          as.numeric(unlist(gene_freq))[j]*
+          ## GO Term frequency
+          (as.numeric(length(Unique_GOs))/42837))/
+       ## list size relative to the genes in the GO Term
+       (as.numeric(length(list_of_interest))/GO_INFO_by_TERM_df$Num_Genes_in_Term[i])
+  }
+}
+
+```
+
+## Plot Probability Distributions
+
+Plot the `Weighted Overlap Prob` distribution and (unweighted) `Overlap Prob` distribution
+
++ distributions of probabilities that given genes/proteins from a provided list are all identified within a given `GO Term`
++ `weighted` accounts for list size, term size, frequency of a gene occurring in any term
+
+```{r Plot Overlap Probability Distributions, include = T, message = F, warning = F, echo = T, render = T}
+  ## Inspect the probability distributions
+GO_INFO_by_TERM_df %>%
+  dplyr::select(GO_Term, Overlap_Prob, Weighted_Overlap_Prob) %>%
+  pivot_longer(cols = c(contains("Overlap")),
+               names_to = "Overlap Prob Type",
+               values_to = "Prob") %>%
+  ggplot(aes(x = Prob, fill = `Overlap Prob Type`)) +
+  geom_histogram(aes(x = Prob))
+```
+
+Weighting broadens the binomial distribution of probabilities away from zero
+
+# Hypothesis Test {.tabset .tabset-pills .tabset-fade}
+
+Are the `Overlap Probabilities` significantly different than we would expect by
+chance?
+
++ Perform a statistical test on each term's `Overlap Probability`:
+
+  + binomial exact test compares:
+    
+    1. the probability of the number of genes identified from the provided list involved in a particular `GO Term` (`Overlap Prob`)
+    2. the theoretical (`Overlap Prob`) probability of the number of genes involved in a particular `GO Term`
+        
+        - theoretical probability is determined by:
+            - simulating 1000 draws from a binomial distribution for a `GO Term` of the same size with the probability determined from the provided list (above)
+          - averaging those 1000 numbers of simulated "successes"
+          - dividing by the maximum number of genes in all `GO Term`s
+  
+  + test returns a p-value of a two-sided binomial exact test
+
++ It is [known](https://geneontology.org/docs/faq/) that statistical results from this analysis may not be meaningful to the user because this approach will return large, vague `GO Terms` OR incredibly noisy and specific `GO Terms`, with a heavy dependence on the list size
+
+## Binomial Exact Test 1
+
+Perform an exact test across the derived probabilities for each `GO Term` to determine
+if that term is over- or under- represented within the provided list:
+
+-   `Weighted Overlap Probs` vs `Expected`
+
+-   `Unweighted Overlap Probs` vs `Expected`
+
+```{r Determine significance, include = T, message = F, warning = F, echo = T}
+  ## Create variables for hypothetical probabilities, drawing from binomial distribution and performing an exact test
+GO_INFO_by_TERM_df = GO_INFO_by_TERM_df %>%
+  dplyr::mutate(E_Weighted_Overlap = NA_real_,
+                E_Weighted_Overlap_Prob = NA_real_,
+                Weighted_Overlap_Prob_p = NA_real_,
+                E_Overlap = NA_real_,
+                E_Overlap_Prob = NA_real_,
+                Overlap_Prob_p = NA_real_)
+
+  ## Fill variables
+for( i in 1:nrow(GO_INFO_by_TERM_df) ) {
+  
+  ## what's the expected weighted overlap? probability? -> 1000 draws
+    ## take the average of the 1000 draws for the overlap
+      ## re-scale by factor of 10
+  GO_INFO_by_TERM_df$E_Weighted_Overlap[i] = round(mean(
+    rbinom(1000,
+           size = GO_INFO_by_TERM_df$Num_Genes_in_Term[i],
+           prob = GO_INFO_by_TERM_df$Weighted_Overlap_Prob[i]
+           )
+    ))
+  
+  ## same but un-weighted
+  GO_INFO_by_TERM_df$E_Overlap[i] = round(mean(
+    rbinom(n = 1000,
+           size = GO_INFO_by_TERM_df$Num_Genes_in_Term[i],
+           prob = GO_INFO_by_TERM_df$Overlap_Prob[i]
+           )
+    ))
+}
+  
+    ## divide it by the total number of genes
+GO_INFO_by_TERM_df$E_Weighted_Overlap_Prob = 
+  
+  GO_INFO_by_TERM_df$E_Weighted_Overlap / max(GO_INFO_by_TERM_df$Num_Genes_in_Term)
+
+
+GO_INFO_by_TERM_df$E_Overlap_Prob = 
+  
+  GO_INFO_by_TERM_df$E_Overlap / max(GO_INFO_by_TERM_df$Num_Genes_in_Term)
+
+for( i in 1:nrow(GO_INFO_by_TERM_df)) {
+    ## perform an exact binomial test and extract p-values
+  GO_INFO_by_TERM_df$Weighted_Overlap_Prob_p[i] =
+    
+    binom.test(GO_INFO_by_TERM_df$Num_Genes_in_Term_from_List[i],
+               GO_INFO_by_TERM_df$Num_Genes_in_Term[i],
+               (GO_INFO_by_TERM_df$E_Weighted_Overlap_Prob[i]),
+               alternative = "two.sided")$p.value
+  
+  
+  GO_INFO_by_TERM_df$Overlap_Prob_p[i] = 
+    
+    binom.test(GO_INFO_by_TERM_df$Num_Genes_in_Term_from_List[i],
+                GO_INFO_by_TERM_df$Num_Genes_in_Term[i],
+                (GO_INFO_by_TERM_df$E_Overlap_Prob[i]),
+                alternative = "two.sided")$p.value
+}
+ 
+  ## any significant? remove low count (1 hit) data and add adjusted p-values
+GO_INFO_by_TERM_df %>%
+  dplyr::arrange(Weighted_Overlap_Prob) %>%
+  dplyr::mutate(Weighted_Overlap_Prob_ADJP = (Weighted_Overlap_Prob_p / nrow(GO_INFO_by_TERM_df)) * 0.05,
+                 Overlap_Prob_ADJP = (Overlap_Prob_p / nrow(GO_INFO_by_TERM_df)) * 0.05) %>%
+  dplyr::filter(Num_Genes_in_Term_from_List > 1) %>%
+  dplyr::slice(c(1:15)) %>%
+  dplyr::select(c(GO_Term, Num_Genes_in_Term_from_List, Num_Genes_in_Term, contains("Overlap")))
+```
+
+Results are plausible, given what we suspect about this dataset
+
+Sorting by p-value returns a flood of 0 p-values (unhelpful)
+
+## Plot Expected Probs vs Actual Probs
+
+Plot the `Expected Overlap Probabilities` (x axis) and the `Overlap Probabilities` (y axis)
+
+  + `weighted overlap`
+
+  + `unweighted overlap`
+
+  + include a generalized additive model fit for each
+
+```{r Prob plots 2, include = T, warning = F, message = F, echo = F, render = T, fig.width= 10}
+  # plot probability distributions
+GO_INFO_by_TERM_df = GO_INFO_by_TERM_df %>%
+  dplyr::mutate(weighted_gam_preds = as.numeric(
+                  predict.gam(
+                    gam(data = GO_INFO_by_TERM_df,
+                        formula = Weighted_Overlap_Prob ~ s(E_Weighted_Overlap_Prob,
+                                                            k = 3,
+                                                            bs = "cr"), weights = E_Weighted_Overlap_Prob
+                        )
+                    )
+                  ),
+                gam_preds = as.numeric(
+                  predict.gam(
+                    gam(data = GO_INFO_by_TERM_df,
+                        formula = Overlap_Prob ~ s(E_Overlap_Prob,
+                                                   k = 3,
+                                                   bs = "cr"), weights = E_Overlap_Prob
+                        )
+                  )
+                ),
+                gam_fit_on_weighted_gam_preds = as.numeric(
+                  predict.gam(
+                    gam(data = GO_INFO_by_TERM_df,
+                        formula = Weighted_Overlap_Prob ~ s(weighted_gam_preds,
+                                                            k = 3,
+                                                            bs = "cr"), weights = weighted_gam_preds
+                    )
+                  )
+                ),
+                gam_fit_on_unweighted_gam_preds = as.numeric(
+                  predict.gam(
+                    gam(data = GO_INFO_by_TERM_df,
+                        formula = Overlap_Prob ~ s(gam_preds,
+                                                   k = 3,
+                                                   bs = "cr"), weights = gam_preds
+                    )
+                  )
+                )
+                )
+
+weighted_fit_plot = GO_INFO_by_TERM_df %>%
+  dplyr::select(c(contains("Weighted"), weighted_gam_preds, Num_Genes_in_Term_from_List)) %>%
+  ggplot()+
+  geom_point(aes(x = E_Weighted_Overlap_Prob,
+                 y = Weighted_Overlap_Prob),
+             color = "navy",
+             alpha = 0.3) +
+  geom_smooth(method = "gam",
+              aes(x = `E_Weighted_Overlap_Prob`,
+                  y = `weighted_gam_preds`),
+              color = "black",
+              linetype = "dashed") +
+  labs(title = "Weighted Overlap Probabilities\nfor each unique GO Term from List")
+
+
+
+unweighted_fit_plot = GO_INFO_by_TERM_df %>%
+  dplyr::select(c(contains("Overlap"), gam_preds, Num_Genes_in_Term_from_List)) %>%
+  ggplot()+
+  geom_point(aes(x = E_Overlap_Prob,
+                 y = Overlap_Prob),
+             color = "navy",
+             alpha = 0.3) +
+  geom_smooth(method = "gam",
+              aes(x = `E_Overlap_Prob`,
+                  y = `gam_preds`),
+              color = "black",
+              linetype = "dashed") +
+  labs(title = "Unweighted Overlap Probabilities\nfor each unique GO Term from List")
+
+weighted_regressed_plot = GO_INFO_by_TERM_df %>%
+  dplyr::select(c(contains("Weighted"), gam_preds, weighted_gam_preds, contains("fit_on"))) %>%
+  ggplot() +
+  geom_point(aes(x = E_Weighted_Overlap_Prob,
+                 y = gam_fit_on_weighted_gam_preds),
+             color = "darkgoldenrod4",
+             alpha = 0.3) +
+  geom_smooth(method = "gam",
+              aes(x = `E_Weighted_Overlap_Prob`,
+                  y = `gam_fit_on_weighted_gam_preds`),
+              color = "black",
+              linetype = "dashed") +
+  labs(title = "Regressed Weighted Overlap Probabilities\nfor each unique GO Term from List",
+       y = "Regressed_Weighted_Overlap_Prob")
+
+unweighted_regressed_plot = GO_INFO_by_TERM_df %>%
+  dplyr::select(c(contains("Overlap"), gam_preds, weighted_gam_preds, contains("fit_on"))) %>%
+  ggplot() +
+  geom_point(aes(x = E_Overlap_Prob,
+                 y = gam_fit_on_unweighted_gam_preds),
+             color = "darkgoldenrod4",
+             alpha = 0.3) +
+  geom_smooth(method = "gam",
+              aes(x = `E_Overlap_Prob`,
+                  y = `gam_fit_on_unweighted_gam_preds`),
+              color = "black",
+              linetype = "dashed") +
+  labs(title = "Regressed Unweighted Overlap Probabilities\nfor each unique GO Term from List",
+       y = "Regressed_Overlap_Prob")
+
+
+ggarrange(weighted_fit_plot, unweighted_fit_plot, weighted_regressed_plot, unweighted_regressed_plot, ncol = 2, nrow = 2, common.legend = T)
+
+```
+
+
+## Assess GAM Model fits
+
+How does the weighted overlap compare?
+
+```{r Model fits, include = T, message = F, warning = F, echo = T}
+
+GO_INFO_by_TERM_df %>%
+  dplyr::mutate(
+                Weighted_Overlap_RMSE = sqrt(mean(weighted_gam_preds - Weighted_Overlap_Prob)^2),
+                
+                Overlap_RMSE = sqrt(mean(gam_preds - Overlap_Prob)^2),
+                
+                Weighted_gam_Preds_RMSE = sqrt(mean(gam_fit_on_weighted_gam_preds - Weighted_Overlap_Prob)^2),
+
+                Unweighted_gam_Preds_RMSE = sqrt(mean(gam_fit_on_unweighted_gam_preds - Overlap_Prob)^2),
+                
+                ) %>%
+  dplyr::select(contains("RMSE")) %>%
+  dplyr::distinct() %>%
+  pivot_longer(cols = c(colnames(.)))
+```
+
+All fits are comparable
+
+*We'll use the* `regressed weighted GAM probabilities` in the `binomial exact test`
+
+## Binomial Exact Test 2
+
+Re-compute the binomial exact test using the `regressed weighted GAM fit values` as the the `Weighted Overlap Probabilities`
+
+i.e. Regress the `Weighted Overlap Prob`s and use those regressed values as the theoretical probs in a `binomial exact test`
+
+
+```{r Re-compute binomial exact test probabilities, include = T, message = F, warning = F, echo = T}
+
+GO_INFO_by_TERM_df = GO_INFO_by_TERM_df %>%
+  dplyr::mutate(
+    E_Weighted_Overlap_2 = NA_real_,
+    E_Weighted_Overlap_Prob_2 = NA_real_,
+    Weighted_Overlap_Prob_p_2 = NA_real_,
+    Weighted_Overlap_Prob_ADJP_2 = NA_real_,
+    E_Overlap_2 = NA_real_,
+    E_Overlap_Prob_2 = NA_real_,
+    Overlap_Prob_p_2 = NA_real_,
+    Overlap_Prob_ADJP_2 = NA_real_
+  )
+
+for( i in 1:nrow(GO_INFO_by_TERM_df) ) {
+  
+  ## what's the expected weighted overlap? probability? -> 1000 draws; USE THE GAM PROB PREDICTS
+    ## take the average of the 1000 draws for the overlap
+  GO_INFO_by_TERM_df$E_Weighted_Overlap_2[i] = round(mean(
+    rbinom(1000,
+           size = GO_INFO_by_TERM_df$Num_Genes_in_Term[i],
+           prob = GO_INFO_by_TERM_df$gam_fit_on_weighted_gam_preds[i]
+           )
+    )
+  )
+  
+  GO_INFO_by_TERM_df$E_Overlap_2[i] = round(mean(
+    rbinom(1000,
+           size = GO_INFO_by_TERM_df$Num_Genes_in_Term[i],
+           prob = GO_INFO_by_TERM_df$gam_fit_on_unweighted_gam_preds[i]
+           )
+  )
+  )
+}
+  
+    ## divide predicted overlap counts by total number of genes
+GO_INFO_by_TERM_df$E_Weighted_Overlap_Prob_2 = 
+  
+  GO_INFO_by_TERM_df$E_Weighted_Overlap_2 / max(GO_INFO_by_TERM_df$Num_Genes_in_Term)
+
+
+GO_INFO_by_TERM_df$E_Overlap_Prob_2 = 
+  
+  GO_INFO_by_TERM_df$E_Overlap_2 / max(GO_INFO_by_TERM_df$Num_Genes_in_Term)
+
+    ## perform an exact binomial test and extract p-values
+for( i in 1:nrow(GO_INFO_by_TERM_df) ) {
+  
+  GO_INFO_by_TERM_df$Weighted_Overlap_Prob_p_2[i] = 
+    
+    binom.test(GO_INFO_by_TERM_df$Num_Genes_in_Term_from_List[i],
+               GO_INFO_by_TERM_df$Num_Genes_in_Term[i],
+               (GO_INFO_by_TERM_df$E_Weighted_Overlap_Prob_2[i]),
+               alternative = "two.sided")$p.value
+  
+  GO_INFO_by_TERM_df$Overlap_Prob_p_2[i] = 
+    
+    binom.test(GO_INFO_by_TERM_df$Num_Genes_in_Term_from_List[i],
+               GO_INFO_by_TERM_df$Num_Genes_in_Term[i],
+               (GO_INFO_by_TERM_df$E_Overlap_Prob_2[i]),
+               alternative = "two.sided")$p.value
+  
+}
+
+
+GO_INFO_by_TERM_df$Weighted_Overlap_Prob_ADJP_2 = 
+  
+  (GO_INFO_by_TERM_df$Weighted_Overlap_Prob_p_2 / nrow(GO_INFO_by_TERM_df) ) * 0.05
+
+
+GO_INFO_by_TERM_df$Overlap_Prob_ADJP_2 = 
+  
+  (GO_INFO_by_TERM_df$Overlap_Prob_p_2 / nrow(GO_INFO_by_TERM_df) ) * 0.05
+  
+```
+
+## Do Exact Test Results Confirm?
+
+```{r GO Bar Plot, include = T, message = F, warning = F, echo = F, render = T}
+GO_Bar = GO_INFO_by_TERM_df %>%
+  dplyr::arrange(Weighted_Overlap_Prob) %>%
+  dplyr::filter(between(Num_Genes_in_Term_from_List, 2, round(as.numeric(length(list_of_interest))/2))) %>%
+  dplyr::slice(c(1:15)) %>%
+  dplyr::select(c(GO_Term,
+                  
+                  Num_Genes_in_Term_from_List,
+                  
+                  E_Weighted_Overlap,
+                  
+                  E_Weighted_Overlap_2,
+                  
+                  Num_Genes_in_Term,
+                  
+                  Weighted_Overlap_Prob,
+                  
+                  E_Weighted_Overlap_Prob_2,
+                  
+                  Weighted_Overlap_Prob_p,
+                  
+                  Weighted_Overlap_Prob_p_2,
+                  
+                  Weighted_Overlap_Prob_ADJP_2,
+                  
+                  gam_fit_on_weighted_gam_preds))
+
+GO_Bar = GO_Bar %>% 
+  dplyr::mutate(GO_Term = case_when(GO_Term == "regulation of CDP-diacylglycerol-serine O-phosphatidyltransferase activity" ~
+                                        "regulation of CDP-diacylglycerol-serine\nO-phosphatidyltransferase activity",
+                                      grepl(GO_Term, pattern = "positive regulation of CDP-diacylglycerol-serine O-phosphatidyltransferase activity") ~
+                                        "positive regulation of CDP-diacylglycerol-serine\nO-phosphatidyltransferase activity",
+                                      grepl(GO_Term, pattern = "positive regulation of serine C-palmitoyltransferase activity") ~
+                                        "positive regulation of\nserine C-palmitoyltransferase activity",
+                                      grepl(GO_Term, pattern = "intrinsic component of neuronal") ~
+                                        "intrinsic component of\nneuronal dense core vesicle membrane",
+                                      grepl(GO_Term, pattern = "intrinsic component of dense") ~
+                                        "intrinsic component of\ndense core granule membrane",
+                                      grepl(GO_Term, pattern = "integral component") ~
+                                        "integral component of\nneuronal dense core vesicle membrane",
+                                      TRUE ~ GO_Term))
+GO_Bar %>%
+  ggplot(aes(x = reorder(GO_Bar$GO_Term, -GO_Bar$Weighted_Overlap_Prob),
+             y = GO_Bar$Weighted_Overlap_Prob)) +
+  geom_col(stat = `identity`, aes(fill = `Weighted_Overlap_Prob`))+
+  scale_fill_continuous(name = "Weighted\nOverlap\nProbability")+
+  labs(x = "GO Term",
+       y = "Weighted Overlap Prob",
+       title = "Estimated Probabilities of\nGenes from Given List Occurring in Given GO Term")+
+  theme_light() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
+        axis.title.y = element_text(margin = margin(t = 0, r = 20, b = 0, l = 0)),
+        plot.title = element_text(hjust = 1),
+        panel.grid.major.y = element_blank()) +
+  coord_flip()
+```
+
+```{r Results Sorted by Weighted Overlap Probability, include = T, message = F, warning = F, echo = F}
+GO_INFO_by_TERM_df %>%
+  dplyr::arrange(Weighted_Overlap_Prob) %>%
+  dplyr::filter(between(Num_Genes_in_Term_from_List, 2, round(as.numeric(length(list_of_interest))/2))) %>%
+  dplyr::slice(c(1:15)) %>%
+  dplyr::select(c(GO_Term,
+                  
+                  Num_Genes_in_Term_from_List,
+                  
+                  Num_Genes_in_Term,
+                  
+                  Weighted_Overlap_Prob,
+                  
+                  weighted_gam_preds,
+                  
+                  gam_fit_on_weighted_gam_preds,
+                  
+                  E_Weighted_Overlap_Prob_2,
+                  
+                  Weighted_Overlap_Prob_ADJP_2))
+```
+
+# Conclusions
+
+**No, test results don't confirm because values are too small to determine if probabilities or counts are significantly different than by chance.**
+
+But when removing highly specific `GO Terms` (with only 1 gene) and arranging by the least probable weighted overlap, the results are incredibly plausible:
+
+We confirmed `GO Term`s we suspected to be intimately and robustly releated to the *Tmem184b*, specifically, `C-fibers`, and `oncostatin-M-mediated signialing pathway`
+
+```{r Export Results, include = F, warning = F, message = F, echo = F}
+
+# write.csv("C:/Users/Erik/Desktop/BoxCopy/Lab/Omics/MS/Bioinformatics Analysis Output/6_15_2021/IntersectList.csv")
+# save.image("C:/Users/Erik/Desktop/BoxCopy/Lab/Omics/MS/Bioinformatics Analysis Output/6_15_2021/proteomics_GO_INFO.RData")
+```
