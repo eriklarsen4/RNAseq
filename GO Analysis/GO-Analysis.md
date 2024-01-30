@@ -50,7 +50,7 @@ two of which have been used for publications
         websites
 
     -   This snippet demonstrates the creation and use of one particular
-        function (another that addresses issues is documented [here]()):
+        function:
 
         -   `GO_INFO_fn`, for performing the statistical analyses of the
             genes/proteins in a provided list
