@@ -17,7 +17,7 @@ This markdown serves as documentation of gene ontology analysis of
 multiple datasets generated in the lab of **Dr. Martha Bhattacharya**,
 two of which have been used for publications
 ([here](https://journals.lww.com/pain/abstract/2022/05000/transmembrane_protein_tmem184b_is_necessary_for.18.aspx),
-[here](https://www.biorxiv.org/content/10.1101/2022.05.27.493793v3#:~:text=Taken%20together%2C%20our%20data%20suggest%20that%20TMEM184B%20is,be%20linked%20to%20neurodevelopmental%20disorders%20than%20to%20dementia.)).
+[here](https://bmcgenomics.biomedcentral.com/articles/10.1186/s12864-023-09676-9)).
 
 
 + `Gene ontology` and `pathway enrichment analyses` provide high-level analysis of the cell/mol consequences following
