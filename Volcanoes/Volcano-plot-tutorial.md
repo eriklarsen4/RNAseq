@@ -156,11 +156,12 @@ length(
 
     ## [1] 205
 
-Subset the dataframe to select differentially expressed genes with
-Adjusted P-values &lt; 0.05 for use in pathway analysis tools to find
-potential mechanistic pathways or other genes/interactions of interest
+Subset the dataframe to select DEGs with
+Adjusted P-values &lt; 0.05 for use in pathway analysis tools.
 
-(see [GO Analysis.md](https://github.com/eriklarsen4/RNAseq/blob/master/GO%20Analysis/GO-Analysis.md)
+Pathway analysis is an attempt to find broader meaning of the consequences of the mutation.
+
+(see [GO Analysis.md](https://github.com/eriklarsen4/RNAseq/blob/master/GO%20Analysis/GO-Analysis.md) )
 
 ``` r
 HITS.01 = subset(aDRG9, aDRG9$AdjP <= 0.01)
@@ -181,7 +182,7 @@ control (in this case, log<sub>2</sub>(FC) of mutant transcripts relative to
 wild type) along the x-axis, and `Adjusted P-values` along the y-axis
 
 Transform the `Adjusted P-values` so that they are integers and are
-somewhat shrunk in a manner that is fit for viewing
+somewhat shrunk to fit for viewing
 
 ``` r
 aDRG9$log10ADJP = -log10(aDRG9$AdjP)
