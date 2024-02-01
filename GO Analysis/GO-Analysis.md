@@ -9,7 +9,7 @@ This markdown serves as documentation of gene ontology analysis of
 multiple datasets generated in the lab of **Dr. Martha Bhattacharya**,
 two of which have been used for publications
 ([here](https://journals.lww.com/pain/abstract/2022/05000/transmembrane_protein_tmem184b_is_necessary_for.18.aspx),
-[here](https://bmcgenomics.biomedcentral.com/articles/10.1186/s12864-023-09676-9)).
+[here](https://bmcgenomics.biomedcentral.com/articles/10.1186/s12864-023-09676-9)), and another is in development.
 
 -   `Gene ontology` and `pathway enrichment analyses` provide high-level
     analysis of the cell/mol consequences following perturbations
@@ -138,18 +138,26 @@ Import data (not shown)
 ``` r
 aDRG = read_csv("~/GitHub/ggplot-scripts/Bioinformatics/RNAseq Data Files/DESeq2 Expression Results.csv")
 
-  ## Filter (subset) genes that went undetected or were outliers in terms of counts;
-  ## new dataframe should not contain any NAs in p-value columns
+  # Filter (subset) genes that went undetected or were outliers in terms of counts;
+  # new dataframe should not contain any NAs in p-value columns
+
 aDRG_sub = subset(aDRG, (!is.na(aDRG[,"AdjP"])))
- ## Filter the DEGs by removing rRNAs and mitochondrial tRNAs, along with pseudogenes, etc.
+
+
+ # Filter the DEGs by removing rRNAs and mitochondrial tRNAs, along with pseudogenes, etc.
+
 aDRG_sub = aDRG_sub %>% filter(!grepl(GeneID,
                                 pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
 #mt.+.?$|  <-- string identifier for mitochondrial tRNAs
 
-  ## Create a column in the DESeq2 dataframe that scales the Adjusted P-value by log-base 10
+
+  # Create a column in the DESeq2 dataframe that scales the Adjusted P-value by log-base 10
+
 aDRG_sub$log10ADJP = -log10(aDRG_sub$AdjP)
 
-  ## Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
+
+  # Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
+
 aDRG_sub = aDRG_sub %>%
   dplyr::mutate(log10ADJP = -log10(AdjP),
                 g.o.i. = GeneID,
@@ -254,7 +262,8 @@ Find the `Overlap_Prob`s for the list of interest
 -   Assess their distributions, make corrections
 
 ``` r
-  ## Store GO term information
+  # Store GO term information
+
 for (i in 1:nrow(GO_INFO_by_TERM_df) ) {
   
   x = paste(
@@ -274,7 +283,8 @@ for (i in 1:nrow(GO_INFO_by_TERM_df) ) {
   
 }
 
-  ## Store conditional probabilities
+  # Store conditional probabilities
+
 GO_INFO_by_TERM_df = GO_INFO_by_TERM_df %>%
   dplyr::mutate(Num_Genes_in_Term = as.numeric(Num_Genes),
                 
@@ -316,26 +326,29 @@ the `list of interest` are found in a given `GO Term`:
     -   `GO Term size` = n<sub>total_genes</sub> in a `GO Term`
 
 ``` r
-  ## Initialize variables for generating the weighted overlap probabilities for each term / gene
+  # Initialize variables for generating the weighted overlap probabilities for each term / gene
 
-  ## how frequently they occur across all GO terms
+  # how frequently they occur across all GO terms
+
 gene_freq = list()
 
-  ## overlap variables
+  # overlap variables
 
-    ## (aka how many genes in the list of interest were detected in GO Term X? --> Overlap)
-    ## for weighted:
-      ## account for: 
-        ## list size
-        ## term size
-        ## number of unique terms found from list of interest
-        ## how frequently genes from the list are found in any GO terms
+    # (aka how many genes in the list of interest were detected in GO Term X? --> Overlap)
+    # for weighted:
+      # account for: 
+        # list size
+        # term size
+        # number of unique terms found from list of interest
+        # how frequently genes from the list are found in any GO terms
+
 GO_INFO_by_TERM_df = GO_INFO_by_TERM_df %>%
   dplyr::mutate(Overlap_Prob = (Num_Genes_in_Term_from_List / max(Num_Genes_in_Term)
                                 ),
                 Weighted_Overlap_Prob = NA_real_)
 
-  ## Populate
+  # Populate
+
 for (i in 1:length(list_of_interest)){
   gene_freq[[i]] = 
     (
@@ -373,7 +386,8 @@ Plot the `Weighted Overlap Prob` distribution and (unweighted)
     occurring in any term
 
 ``` r
-  ## Inspect the probability distributions
+  # Inspect the probability distributions
+
 GO_INFO_by_TERM_df %>%
   dplyr::select(GO_Term, Overlap_Prob, Weighted_Overlap_Prob) %>%
   pivot_longer(cols = c(contains("Overlap")),
@@ -433,7 +447,8 @@ within the provided list:
 -   `Unweighted Overlap Probs` vs `Expected`
 
 ``` r
-  ## Create variables for hypothetical probabilities, drawing from binomial distribution and performing an exact test
+  # Create variables for hypothetical probabilities, drawing from binomial distribution and performing an exact test
+
 GO_INFO_by_TERM_df = GO_INFO_by_TERM_df %>%
   dplyr::mutate(E_Weighted_Overlap = NA_real_,
                 E_Weighted_Overlap_Prob = NA_real_,
@@ -442,12 +457,15 @@ GO_INFO_by_TERM_df = GO_INFO_by_TERM_df %>%
                 E_Overlap_Prob = NA_real_,
                 Overlap_Prob_p = NA_real_)
 
-  ## Fill variables
+
+  # Fill variables
+
 for( i in 1:nrow(GO_INFO_by_TERM_df) ) {
   
-  ## what's the expected weighted overlap? probability? -> 1000 draws
-    ## take the average of the 1000 draws for the overlap
-      ## re-scale by factor of 10
+  # what's the expected weighted overlap? probability? -> 1000 draws
+    # take the average of the 1000 draws for the overlap
+      # re-scale by factor of 10
+
   GO_INFO_by_TERM_df$E_Weighted_Overlap[i] = round(mean(
     rbinom(1000,
            size = GO_INFO_by_TERM_df$Num_Genes_in_Term[i],
@@ -455,7 +473,8 @@ for( i in 1:nrow(GO_INFO_by_TERM_df) ) {
            )
     ))
   
-  ## same but un-weighted
+  # same but un-weighted
+
   GO_INFO_by_TERM_df$E_Overlap[i] = round(mean(
     rbinom(n = 1000,
            size = GO_INFO_by_TERM_df$Num_Genes_in_Term[i],
@@ -464,7 +483,7 @@ for( i in 1:nrow(GO_INFO_by_TERM_df) ) {
     ))
 }
   
-    ## divide it by the total number of genes
+    # divide it by the total number of genes
 GO_INFO_by_TERM_df$E_Weighted_Overlap_Prob = 
   
   GO_INFO_by_TERM_df$E_Weighted_Overlap / max(GO_INFO_by_TERM_df$Num_Genes_in_Term)
@@ -475,7 +494,8 @@ GO_INFO_by_TERM_df$E_Overlap_Prob =
   GO_INFO_by_TERM_df$E_Overlap / max(GO_INFO_by_TERM_df$Num_Genes_in_Term)
 
 for( i in 1:nrow(GO_INFO_by_TERM_df)) {
-    ## perform an exact binomial test and extract p-values
+    # perform an exact binomial test and extract p-values
+
   GO_INFO_by_TERM_df$Weighted_Overlap_Prob_p[i] =
     
     binom.test(GO_INFO_by_TERM_df$Num_Genes_in_Term_from_List[i],
@@ -492,7 +512,8 @@ for( i in 1:nrow(GO_INFO_by_TERM_df)) {
                 alternative = "two.sided")$p.value
 }
  
-  ## any significant? remove low count (1 hit) data and add adjusted p-values
+  # any significant? remove low count (1 hit) data and add adjusted p-values
+
 GO_INFO_by_TERM_df %>%
   dplyr::arrange(Weighted_Overlap_Prob) %>%
   dplyr::mutate(Weighted_Overlap_Prob_ADJP = (Weighted_Overlap_Prob_p / nrow(GO_INFO_by_TERM_df)) * 0.05,
@@ -631,7 +652,7 @@ GO_INFO_by_TERM_df %>%
 
 All fits are comparable
 
-*We’ll use the* `regressed weighted GAM probabilities` in the
+*We’ll use the* `regressed weighted GAM probabilities` *in the*
 `binomial exact test`
 
 ## Binomial Exact Test 2
@@ -658,8 +679,9 @@ GO_INFO_by_TERM_df = GO_INFO_by_TERM_df %>%
 
 for( i in 1:nrow(GO_INFO_by_TERM_df) ) {
   
-  ## what's the expected weighted overlap? probability? -> 1000 draws; USE THE GAM PROB PREDICTS
-    ## take the average of the 1000 draws for the overlap
+  # what's the expected weighted overlap? probability? -> 1000 draws; USE THE GAM PROB PREDICTS
+    # take the average of the 1000 draws for the overlap
+
   GO_INFO_by_TERM_df$E_Weighted_Overlap_2[i] = round(mean(
     rbinom(1000,
            size = GO_INFO_by_TERM_df$Num_Genes_in_Term[i],
@@ -677,7 +699,8 @@ for( i in 1:nrow(GO_INFO_by_TERM_df) ) {
   )
 }
   
-    ## divide predicted overlap counts by total number of genes
+    # divide predicted overlap counts by total number of genes
+
 GO_INFO_by_TERM_df$E_Weighted_Overlap_Prob_2 = 
   
   GO_INFO_by_TERM_df$E_Weighted_Overlap_2 / max(GO_INFO_by_TERM_df$Num_Genes_in_Term)
@@ -687,7 +710,8 @@ GO_INFO_by_TERM_df$E_Overlap_Prob_2 =
   
   GO_INFO_by_TERM_df$E_Overlap_2 / max(GO_INFO_by_TERM_df$Num_Genes_in_Term)
 
-    ## perform an exact binomial test and extract p-values
+    # perform an exact binomial test and extract p-values
+
 for( i in 1:nrow(GO_INFO_by_TERM_df) ) {
   
   GO_INFO_by_TERM_df$Weighted_Overlap_Prob_p_2[i] = 
