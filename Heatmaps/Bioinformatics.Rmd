@@ -1,0 +1,603 @@
+---
+title: "Bioinformatics"
+author: "Erik Larsen"
+date: "7/17/2021"
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: yes
+    numbered_sections: yes
+    code_folding: hide
+---
+
+# Overview
+
++ I developed this Markdown to document some bioinformatics analyses of data published by **M. Bhattacharya Lab** in the publication, [Transmembrane protein TMEM184B is necessary for interleukin-31–induced itch](https://journals.lww.com/pain/Abstract/9000/Transmembrane_protein_TMEM184B_is_necessary_for.97918.aspx).
+
++ These analyses were performed on a number of different datasets and include:
+
+  + MA plots
+  + volcano plots
+  + heatmaps
+  + bar graphs 
+  
+1. `Illumina FASTQ files` were pseudoaligned  with the `Salmon` algorithm
+
+2. run through `Usegalaxy.org`'s `DESeq2` wrapper algorithm to obtain `DGEA files`
+
+3. `Galaxy` also returned TPM data for use in transcriptional profiling (heatmaps)
+
++ To obtain pathway and gene ontology info, the [Enrichr](https://maayanlab.cloud/Enrichr/) database was queried from the console using the [enrichR](https://github.com/guokai8/Enrichr#:~:text=Description%20EnrichR%20is%20a%20package%20can%20be%20used,species%20pubished%20by%20ENSEMBL%20and%20included%20with%20Bioconductor.) package.
+
++ The source script of this file is the [Bioinformatics R Script](C:/Users/Erik/Desktop/BoxCopy/Programming Scripts and Data/Bio/Scripts/R/Broad/Bioinformatics Script.R).  
+
++ Standalone analyses or tutorials, including volcano plotting, and `gene ontology` and `pathway analysis` can be found in other `R/Github Markdown` files and scripts, [Gene Ontology Analysis Snippet](https://github.com/eriklarsen4/Proteomics/blob/main/GO%20Analysis/GO-Analysis.md) and
+[Volcano plot tutorial R Markdown](https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/Volcano-plot-tutorial.md)
+
+# Environment Prep {.tabset .tabset-pills .tabset-fade}
+
+Note that code can be sectioned and condensed with the `Alt + O` command.
+
+Packages for this script:
+[tidyverse](https://cran.r-project.org/package=tidyverse), [stringr](https://cran.r-project.org/package=stringr),
+[readr](https://cran.r-project.org/package=readr), [biomaRt](https://bioconductor.org/packages/biomaRt/),
+[GO.db](http://bioconductor.riken.jp/packages/3.0/data/annotation/html/GO.db.html), [PANTHER.db](https://bioconductor.org/packages/PANTHER.db/), [BiocGenerics](https://bioconductor.org/packages/BiocGenerics),
+[pheatmap](https://cran.r-project.org/package=pheatmap)
+
+## Install and Load Packages
+
+Install biology-based packages with `BiocManager`.
+
+Load the [BiocGenerics](https://bioconductor.org/packages/BiocGenerics) package for Bioconductor-relevant functionality (installing packages from [Bioconductor](https://www.bioconductor.org/))
+
+```{r Install 1, include = T, message = F, warning = F, echo = T}
+library(BiocGenerics) ## Needed to install and/or load Bioconductor packages
+```
+
+``` {r Install 2, include = F, message = F, warning = F, echo = F}
+library(PANTHER.db) ## Needed in the Enrichr package when querying pathways
+pthOrganisms(PANTHER.db) = "MOUSE"
+```
+
+Load the remaining packages
+
+``` {r Install 3, include = T, message = F, warning = F, echo = T}
+library(enrichR) ## Taps the Enrichr database; much better utility than the website
+
+  ## For data wrangling (slicing/adding/removing/melting/rearranging dataframes and their columns and rows):
+library(tidyverse)
+# library(plyr)
+# library(dplyr)
+# library(reshape2)
+
+library(readr) ## For importing data and files
+
+library(stringr) ## Awesome for manipulating strings
+
+  ## Databases for downstream analyses of lists via gene ontology:
+library(biomaRt)
+#library(org.Hs.eg.db)
+library(org.Mm.eg.db)
+library(GO.db)
+
+library(pheatmap) ## For creating awesome heatmaps
+
+library(httpuv) ## For including plots in Markdown file output
+```
+
+## Upload Enrichr DBs
+
+Obtain databases from `enrichr` by creating a variable and viewing it. Subset from the variable a few databases of interest.
+
+```{r Upload Enrichr db, include = T, message = F, warning = F, echo = T}
+    ## Store it as a variable for better visualization and eventual subsetting
+DBs = listEnrichrDbs()
+
+  ## View the variable in the editor to find the relevant databases and their indeces for subsetting
+  ## (click on the dataframe in the Global Environment and manually peruse)
+
+diff_DBs = DBs %>%
+  dplyr::filter(grepl(libraryName, pattern = "Transcription_Factor_PPIs|Reactome_2022|Most_Popular_Genes|ENCODE_TF|GPCR|Enrichr")) %>%
+  dplyr::select(libraryName) %>%
+  as.vector() %>%
+  unlist() %>%
+  as.character()
+
+DBs = DBs %>%
+  dplyr::filter(grepl(libraryName, pattern = "GO_.+?(2023)$|Panther_2016|PPI_Hub|Jensen_DISEASES")) %>%
+  dplyr::select(libraryName) %>%
+  as.vector() %>%
+  unlist() %>%
+  as.character()
+```
+
+
+```{r old Enrichr, include = F, message = F, warning = F, echo = F}
+# DBs = listEnrichrDbs() ## Store it as a variable for better visualization and eventual subsetting
+# diff_DBs = DBs$libraryName[c(50,127,91,92,105,162)]
+# DBs = DBs$libraryName[c(130,131,132,102,14,110)]
+# 
+#   ## Peek at the selections
+# diff_DBs
+# DBs
+
+```
+
+Create dataframes to house bioinformatics analyses returned from enrichr.
+
+``` {r include = TRUE, message = FALSE}
+  ## Create dataframes to store returned analyses as variables
+GO_Processes = data.frame()
+GO_Cell_Comps = data.frame()
+GO_Mol_Funcs = data.frame()
+PATHWAYS = data.frame()
+PPIs = data.frame()
+DISEASES = data.frame()
+ENCODE_TFs = data.frame()
+Enrichr_TFs = data.frame()
+GPCR_Down_Perturbs = data.frame()
+GPCR_Up_Perturbs = data.frame()
+GO_PROCESS_GENES = data.frame()
+GO_MOL_FUNC_GENES = data.frame()
+GO_CELL_COMP_GENES = data.frame()
+PATHWAY_GENES = data.frame()
+PPI_GENES = data.frame()
+DISEASE_GENES = data.frame()
+ENCODE_TF_GENES = data.frame()
+ENRICHR_TF_GENES = data.frame()
+GPCR_DOWN_PERTURB_GENES = data.frame()
+GPCR_UP_PERTURB_GENES = data.frame()
+```
+
+## Source Enrichr Function
+
+Create a data frame to collect data returned by `enrichr`; then create the function that will tap enrichr's database and populate all the dataframes.
+
+``` {r Old Enrichr fn, include = F, message = F, warning = F, echo = F}
+  ## Create a function that will return Enrichr-based functional analysis on a given gene set
+    ## First, create a data frame that will house combined enrichr output
+      ## (this is for exporting collapsed, collective data into a CSV)
+Enrichr_Functional_Output = data.frame()
+
+  ## Create the analysis function
+Enrichr_Analysis = function(Genes){
+  ## first: Gene ontology biological processes; this identifies cell/biological processes with which the genes in the dataset are associated
+  GO_Processes = as.data.frame(
+    enrichr(
+      c(Genes), DBs[1])
+  )
+  
+  
+  ## Remove unnecessary columns
+  GO_Processes = GO_Processes[,-c(5,6,7)]
+   
+  
+  ## Clean up the dataframes
+  GO_Processes = GO_Processes %>%
+    separate(GO_Biological_Process_2018.Overlap, c("Overlap", "Process Size"), "/")
+  ## Convert the values into integers for computation
+  GO_Processes$Overlap = as.numeric(GO_Processes$Overlap)
+  GO_Processes$`Process Size` = as.numeric(GO_Processes$`Process Size`)
+  
+  
+  ## Add Enrichr's Z-score. This determines a term/pathway's rank change across
+  ## all terms/pathways when compared to the term/pathway's "pre-rank" based on
+  ## multiple simulations of the same number of enriched genes.
+  GO_Processes = add_column(GO_Processes, EnrichrZscore = GO_Processes$GO_Biological_Process_2018.Combined.Score/log(GO_Processes$GO_Biological_Process_2018.P.value), .before = 6)
+  ## Add the "weighted overlap ratio" of a term/pathway's number of enriched genes. 
+    ## The fraction of differentially expressed genes belonging to a term/pathway
+    ## ("overlap"; numerator) out of the total genes in that term/pathway/hub (denominator)
+    ## is scaled by the overlap. This weights differentially expressed genes by pathway size.
+  GO_Processes = add_column(GO_Processes, Weighted_Overlap_Ratio = GO_Processes$Overlap*(GO_Processes$Overlap/GO_Processes$`Process Size`), .before = 4)
+  ## Add the modifcation of Enrichr's "Combined Score". This scales the term/pathway's Adjusted P-value by the Enrichr Z-score. 
+  GO_Processes = add_column(GO_Processes, Modified_Combined_Score = (abs(GO_Processes$EnrichrZscore))*(-log(GO_Processes$GO_Biological_Process_2018.Adjusted.P.value)), .before = 6)
+  ## Remove GO IDs
+  GO_Processes$GO_Biological_Process_2018.Term = GO_Processes$GO_Biological_Process_2018.Term %>% gsub(x = GO_Processes$GO_Biological_Process_2018.Term, pattern = " \\(.*\\)$", replacement = "")
+  
+ 
+  ## Extract a concatenated string containing genes involved in each GO Biological Process
+  GO_PROCESS_GENES = str_split(GO_Processes$GO_Biological_Process_2018.Genes, pattern = ";", simplify = TRUE)
+  for (i in 1:nrow(GO_PROCESS_GENES)){
+    GO_PROCESS_GENES[i,] = paste(substr(GO_PROCESS_GENES[i,], 1, 1),
+                                 tolower(substr(GO_PROCESS_GENES[i,], 2, 7)), sep = "") 
+  }
+  
+  
+  ## Make sure the Enrichr reference results are correctly ordered
+  GO_Processes = GO_Processes[order(GO_Processes$Modified_Combined_Score, decreasing = TRUE), ]
+  ## Re-set the index to make sure indeces are correct
+  row.names(GO_Processes) = NULL
+  
+  
+  ## Export these data frames to the global environment
+  GO_Processes <<- GO_Processes
+  
+  return(c("GO BIOLOGICAL PROCESSES", GO_Processes[1:10,1]))
+}
+```
+
+```{r Enrichr Function, include = T, message = F, warning = F, echo = T}
+source("~/GitHub/Proteomics/Functions/Enrichr Analysis Function.R")
+```
+
+## Data import
+
+Import the adult `DRG DESeq2 file`
+
+``` {r DESeq2 import, include = T, message = F, warning = F, echo = T}
+aDRG = read.csv("~/GitHub/ggplot-scripts/Bioinformatics/RNAseq Data Files/DESeq2 Expression Results.csv")
+
+  ## Filter (subset) genes that went undetected or were outliers in terms of counts;
+  ## new dataframe should not contain any NAs in p-value columns
+aDRG3 = subset(aDRG, (!is.na(aDRG[,"AdjP"])))
+ ## Filter the DEGs by removing rRNAs and mitochondrial tRNAs, along with pseudogenes, etc.
+aDRG9 = aDRG3 %>% filter(!grepl(GeneID,
+                                pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
+#mt.+.?$|  <-- string identifier for mitochondrial tRNAs
+
+  ## Create a column in the DESeq2 dataframe that scales the Adjusted P-value by log-base 10
+aDRG9$log10ADJP = -log10(aDRG9$AdjP)
+
+  ## Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
+    ## First create the column and use Gene IDs as place-holders
+aDRG9$g.o.i. = aDRG9$GeneID
+  ## Replace DEGs with the string, "DEGs"
+aDRG9$g.o.i.[which(aDRG9$AdjP <= 0.05)]= "DEGs"
+  ## Replace the remaining genes with "Non-DEGs"
+aDRG9$g.o.i.[which(aDRG9$AdjP >= 0.05)]= "Non-DEGs"
+
+aDRG_DEG_list = c(aDRG9$GeneID[which(aDRG9$g.o.i. == "DEGs")])
+
+```
+
+``` {r e13, include = F, message = F, warning = F, echo = F}
+e13_DRG = read.csv("C:/Users/Erik/Desktop/BoxCopy/Lab/Omics/RNAseq/Embryonic DRG/Processed Galaxy Output/Test Results to Upload/e13/DESeq2_result_file_on_GT_e13_PARA.csv", header = FALSE)
+
+  ## Set the column names
+colnames(e13_DRG) = colnames(aDRG)[c(1:7)]
+  ## Subset the data as with the adult dataset
+e13_DRG3 = subset(e13_DRG, (!is.na(e13_DRG[,"AdjP"])))
+e13_DRG9 = e13_DRG3 %>% filter(!grepl(e13_DRG3$GeneID, pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
+
+  ## Add a column containing "%WT"
+e13_DRG9 = add_column(e13_DRG9, X..WT = 2^(e13_DRG9$log2.FC.[]))
+  ## Rename the column
+colnames(e13_DRG9)[8] = colnames(aDRG)[8]
+  ## Convert the values for graphics (positive from 0 -> Inf)
+e13_DRG9$log10ADJP = -log10(e13_DRG9$AdjP)
+
+
+e13_DRG9$g.o.i. = e13_DRG9$GeneID
+e13_DRG9$g.o.i.[which(e13_DRG9$AdjP <= 0.01)]= "DEGs"
+e13_DRG9$g.o.i.[which(e13_DRG9$AdjP >= 0.01)]= "Non-DEGs"
+
+e13_DRG_DEG_list = c(e13_DRG9$GeneID[which(e13_DRG9$g.o.i. == "DEGs")])
+
+```
+
+```{r p0, eval = F, include = F, message = F, warning = F, echo = F}
+P0_DRG = read.csv("C:/Users/Erik/Desktop/BoxCopy/Lab/Omics/RNAseq/Embryonic DRG/Processed Galaxy Output/Test Results to Upload/p0/DESeq2_result_file_on_GT_p0_PARA.csv", header = FALSE)
+
+colnames(P0_DRG) = colnames(aDRG)[c(1:7)]
+
+P0_DRG3 = subset(P0_DRG, (!is.na(P0_DRG[,"AdjP"])))
+P0_DRG9 = P0_DRG3 %>% filter(!grepl(P0_DRG3$GeneID, pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
+
+
+P0_DRG9 = add_column(P0_DRG9, X..WT = 2^(P0_DRG9$log2.FC.[]))
+colnames(P0_DRG9)[8] = colnames(aDRG)[8]
+
+P0_DRG9$log10ADJP = -log10(P0_DRG9$AdjP)
+
+P0_DRG9$g.o.i. = P0_DRG9$GeneID
+P0_DRG9$g.o.i.[which(P0_DRG9$AdjP <= 0.05)]= "DEGs"
+P0_DRG9$g.o.i.[which(P0_DRG9$AdjP >= 0.05)]= "Non-DEGs"
+
+P0_DRG_DEG_list = c(P0_DRG9$GeneID[which(P0_DRG9$g.o.i. == "DEGs")])
+
+```
+
+``` {r p10, eval = F, include = F, message = F, warning = F, echo = F}
+P10_DRG = read.csv("C:/Users/Erik/Desktop/BoxCopy/Lab/Omics/RNAseq/Embryonic DRG/Processed Galaxy Output/Test Results to Upload/p10/DESeq2_result_file_on_GT_p10_PARA.csv", header = FALSE)
+
+colnames(P10_DRG) = colnames(aDRG)[c(1:7)]
+
+
+P10_DRG3 = subset(P10_DRG, (!is.na(P10_DRG[,"AdjP"])))
+P10_DRG9 = P10_DRG3 %>% filter(!grepl(P10_DRG3$GeneID, pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
+
+P10_DRG9 = add_column(P10_DRG9, X..WT = 2^(P10_DRG9$log2.FC.[]))
+colnames(P10_DRG9)[8] = colnames(aDRG)[8]
+
+
+P10_DRG9$log10ADJP = -log10(P10_DRG9$AdjP)
+
+P10_DRG9$g.o.i. = P10_DRG9$GeneID
+P10_DRG9$g.o.i.[which(P10_DRG9$AdjP <= 0.05)]= "DEGs"
+P10_DRG9$g.o.i.[which(P10_DRG9$AdjP >= 0.05)]= "Non-DEGs"
+
+P10_DRG_DEG_list = c(P10_DRG9$GeneID[which(P10_DRG9$g.o.i. == "DEGs")])
+
+```
+
+``` {r IV data, eval = F, include = F, message = F, warning = F, echo = F}
+DIV14 = read.csv("C:/Users/Erik/Desktop/BoxCopy/Lab/Omics/RNAseq/Embryonic DRG/Processed Galaxy Output/Test Results to Upload/Cultured Embryos for Genotype at DIV14.csv")
+
+colnames(DIV14) = colnames(aDRG)[c(1:7)]
+
+DIV143 = subset(DIV14, (!is.na(DIV14[,"AdjP"])))
+DIV149 = DIV143 %>% filter(!grepl(DIV143$GeneID, pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
+
+DIV149 = add_column(DIV149, X..WT = 2^(DIV149$log2.FC.[]))
+colnames(DIV149)[8] = colnames(aDRG)[8]
+
+DIV149$log10ADJP = -log10(DIV149$AdjP)
+
+DIV149$g.o.i. = DIV149$GeneID
+DIV149$g.o.i.[which(c(DIV149$AdjP < 0.01 & DIV149$log2.FC. > 0))]= "Up DEGs"
+DIV149$g.o.i.[which(c(DIV149$AdjP < 0.01 & DIV149$log2.FC. < 0))]= "Down DEGs"
+```
+
+
+# Query the Enrichr db {.tabset .tabset-pills .tabset-fade}
+
+Search the `Enrichr` database using the function created above with any of the above gene lists.
+
+```{r Run enrichr snippet, include = T, message = F, warning = F, echo = T}
+Enrichr_Analysis(Genes = aDRG_DEG_list)
+```
+
+## Prep data for heatmaps
+
+Import the adult transcriptional profile (normalized TPM).
+
+``` {r Trx profile upload, include = T, warnings = F, message = F, echo = T}
+  ## Import the adult normalized counts file.
+    ## These are expression estimates for each gene, for each sample/replicate,
+    ## where each gene's value is normalized to its sample's effect size
+aTPM = read_csv("~/GitHub/ggplot-scripts/Bioinformatics/RNAseq Data Files/RNASeqRepResults.csv", col_names = TRUE)
+  ## Rename columns
+colnames(aTPM) = c("GeneID", "WT1", "WT2", "WT3", "WT4", "Mut1", "Mut2", "Mut3", "Mut4")
+
+  ## Subset by only genes in the filtered aDRG DESeq2 file
+ExpProfile = aTPM[aTPM$GeneID %in% c(aDRG9$GeneID),]
+```
+
+Create a function that makes a dataframe housing the Z-scored transcriptional profile to then graph using `pheatmap`.
+
+```{r Zscore Function, include = T, warning = F, message = F, echo = F}
+  ## Create a function that determines the Zscores of the expression profile (row Z-scores)
+Find_Row_Z = function(Expression_Profile){
+  ## Create dataframes to calculate Z-scores across replicates of each gene.
+  ## These will hold the original data frame values until filled in later commands
+  ## "Big" will store the means and sds of each gene
+  NetBIG = Expression_Profile
+  ## "3" will store only the means by genes for all replicates
+  Net3 = Expression_Profile
+  ## "4" will store only the sds by gene for all replicates
+  Net4 = Expression_Profile
+  ## "Z" will store only the Z-scores, which will be used directly to create the heatmaps
+  NetZ = Expression_Profile
+  
+  ## Create a new column to fill with the means and standard deviations of each gene's transcript counts per million ("TPM")
+  NetBIG$mean = 0
+  NetBIG$sd = 0
+  
+  ## Loop through the dataframe and fill the "mean" and "sd" columns with their appropriate values
+  for (i in 1:nrow(NetBIG)){
+    NetBIG$mean[i] = (sum(Expression_Profile[i,c(2:ncol(Expression_Profile))])/ncol(Expression_Profile[,c(2:ncol(Expression_Profile))]))
+  }
+  for (j in 1:nrow(NetBIG)){
+    NetBIG$sd[j] = sd(Expression_Profile[j,c(2:ncol(Expression_Profile))], na.rm = TRUE)
+  }
+  ## Create a dataframe storing the gene-specific mean normalized TPM in all columns/replicates for Z-score calculating
+  Net3[,c(2:ncol(Expression_Profile))] = NetBIG$mean
+  ## Create a dataframe storing the gene-specific normalized TPM standard deviationsin all columns/replicates for Z-score calculating
+  Net4[,c(2:ncol(Expression_Profile))] = NetBIG$sd
+  ## Create the Z-score dataframe
+  NetZ[,c(2:ncol(Expression_Profile))] = (Expression_Profile[,c(2:ncol(Expression_Profile))] - Net3[,c(2:ncol(Expression_Profile))])/Net4[,c(2:ncol(Expression_Profile))]
+  ## Remove the genes that were detected to have 0 TPMs across all samples
+  ## Create a function that evaluates a vector/dataframe's (x's) numerical values. Returns equal length vector with T/F bools.
+  ## Subset the dataframe that filters those genes.
+  row_has_na = apply(NetZ, 1, function(x){any(is.na(x))})
+  NetZ = NetZ[!row_has_na,]
+  Z <<- NetZ
+}
+```
+
+Run the Z-score function.
+
+```{r Z score call, include = T, message = F, warning = F, echo = T}
+Find_Row_Z(Expression_Profile = ExpProfile)
+```
+
+Arrange the data for generating a full transcriptional profile.
+
+```{r Z rearrange, include = T, message = F, warning = F, echo = T}
+  ## Don't remove non-DEGs
+Z = Z %>%
+  filter(GeneID %in% aDRG9$GeneID[])
+
+  ## Create a list of gene names ordered by euclidean distance by which to re-order the dataframe
+Euclid_dist_order = hclust(dist(Z[,c(2:9)], method = "euclidean"))$order
+  ## The names (not the numbers)
+Euclid_dist_ord_Genes = c(Z$GeneID[Euclid_dist_order])
+
+  ## Transform again to order by clusters (Euclidean distances)
+Za = Z %>%
+  mutate(GeneID =  factor(GeneID, levels = Euclid_dist_ord_Genes)) %>%
+  arrange(GeneID)
+
+  ## Find where the "Itch-related DEGs" are in the clustered matrix subsetted to DEGs for the heatmap
+itch_DEGs = c("Il31ra", "Cysltr2", "Npy2r", "Sst",
+              "Htr1a", "P2rx3", "Lpar3", "Lpar5",
+              "Scn11a", "Scn10a", "Mrgprd", "Trpc6",
+              "Trpc3", "F2rl2", "Htr1f", "Osmr",
+              "Fxyd2", "Htr4", "Mrgprx1", "Ptgdr",
+              "Trpa1", "Trpm6", "Hrh1", "Mrgpra3", "Tmem184b")
+
+temp = vector()
+for( i in 1:length(itch_DEGs)){
+  temp[i] = which(Euclid_dist_ord_Genes == itch_DEGs[i])
+}
+itch_index = temp
+#itch_index
+
+  ## Confirm by indexing; copy and paste to customize the clustered heatmap
+#Euclid_dist_ord_Genes[c(itch_index)]
+  ## Confirm the location/order of the transformed matrix/dataframe
+  ## Should be "Il31ra"
+Za[itch_index[1],]
+
+```
+
+# Plot the heatmaps {.tabset .tabset-pills .tabset-fade}
+
+## Adult Full
+
+View the full transcriptional profile of **Adult Tmem184b-mutant DRG neurons**.
+
+```{r Full Z-scored, Euclidean-clustered and ordered pheatmap, include = T, message = F, warning = F, echo = T, render = T}
+
+ ## Visualize the Z-scored, Euclidean-clustered and ordered gene TPMs across replicates with "pheatmap"
+pheatmap(mat = Za[,2:9],
+         color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
+         clustsering_distance_rows = "euclidean",
+         angle_col = 0,
+         cutree_rows = 2,
+         treeheight_row = 35,
+         treeheight_col = 7,
+         show_rownames = F)
+```
+
+## Adult Zoom
+
+**View the cluster near Tmem184b**
+
+```{r Tmem184b cluster Zoom on Z-scored Euclidean-clustered and ordered pheatmap, include = T, message = F, warning = F, echo = T, render = T}
+  ## Visualize around the Tmem184b cluster
+pheatmap(mat = Za[1597:1637,2:9],
+         color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
+         clustsering_distance_rows = "euclidean",
+         angle_col = 0,
+         treeheight_row = 35,
+         treeheight_col = 9,
+         labels_row = Euclid_dist_ord_Genes[1597:1637])
+```
+
+## Adult Itch 
+
+**View the cluster including select itch transcripts**.
+
+```{r Itch trx cluster Zoom on Z-scored Euclidean-clustered and ordered pheatmap, include = T, message = F, warning = F, echo = T, render = T}
+  ## Visualize the "Itch-related DEGs"
+pheatmap(mat = Za[c(itch_index),2:9],
+         color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
+         clustsering_distance_rows = "euclidean",
+         angle_col = 0,
+         treeheight_row = 35,
+         treeheight_col = 9,
+         cutree_rows = 4,
+         labels_row = Euclid_dist_ord_Genes[c(itch_index)])
+```
+
+## Adult DEGs Only
+
+Arrange the data to include only DEGs.
+
+``` {r sort, include = T, message = F, warning = F, echo = T}
+  ## Transform the profile to include only DEGs
+Zb = Z %>%
+  filter(GeneID %in% aDRG9$GeneID[c(1:376)])
+```
+
+Prep it for a heatmap as before (not shown).
+
+```{r Itch DEG heatmap prep, include = T, warning = F, message = F, echo = F}
+  ## Create a list of gene names ordered by euclidean distance by which to re-order the dataframe
+Euclid_dist_order = hclust(dist(Zb[,c(2:9)], method = "euclidean"))$order
+  ## The names (not the numbers)
+Euclid_dist_ord_Genes = c(Zb$GeneID[Euclid_dist_order])
+
+  ## Transform again to order by clusters (Euclidean distances)
+Zb = Zb %>%
+  mutate(GeneID =  factor(GeneID, levels = Euclid_dist_ord_Genes)) %>%
+  arrange(GeneID)
+
+temp = vector()
+for( i in 1:length(itch_DEGs)){
+  temp[i] = which(Euclid_dist_ord_Genes == itch_DEGs[i])
+}
+itch_DEG_index = temp
+#itch_DEG_index
+
+  ## Confirm by indexing; copy and paste to customize the clustered heatmap
+#Euclid_dist_ord_Genes[c(itch_DEG_index)]
+  ## Confirm the location/order of the transformed matrix/dataframe
+  ## Should be "Il31ra"
+#Zb[itch_DEG_index[1],]
+```
+
+**Plot the results of the profile of only DEGs in Tmem184b-mutant DRG neurons.**
+
+```{r Z-scored Euclidean-clustered and ordered pheatmap of DEGS, include = T, message = F, warning = F, echo = F, render = T}
+  ## Visualize the Z-scored, Euclidean-clustered and ordered DEGs across replicates with "pheatmap"
+pheatmap(mat = Zb[,2:9],
+         color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
+         clustsering_distance_rows = "euclidean",
+         clustering_distance_cols = "euclidean",
+         angle_col = 0,
+         treeheight_row = 35,
+         treeheight_col = 7,
+         show_rownames = F)
+```
+
+## Adult DEGs Only Zoom
+
+**Zoom to Tmem184b**
+
+```{r Tmem184b Cluster Zoom Z-scored Euclidean-clustered ordered pheatmap of DEGs, include = T, message = F, warning = F, echo = F, render = T}
+  ## Visualize around the Tmem184b cluster
+pheatmap(mat = Zb[92:132,2:9],
+         color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
+         clustsering_distance_rows = "euclidean",
+         angle_col = 0,
+         treeheight_row = 35,
+         treeheight_col = 9,
+         labels_row = Euclid_dist_ord_Genes[92:132])
+```
+
+## Adult DEGs Only Itch Zoom
+
+**Zoom to the area comprising many itch genes**
+
+```{r Itch DEG Cluster Zoom Z-scored Euclidean-clustered ordered pheatmap of DEGs, include = T, message = F, warning = F, echo = F, render = T}
+  ## Visualize the "Itch-related DEGs"
+pheatmap(mat = Zb[c(87:376),2:9],
+         color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
+         clustsering_distance_rows = "euclidean",
+         angle_col = 0,
+         treeheight_row = 35,
+         treeheight_col = 9,
+         cutree_rows = 5,
+         show_rownames = F)
+```
+
+**View select itch genes**.
+
++ The difference between the first three heatmaps and the last four heatmaps is hierarchically clustering only on DEGs in the last four
+
++ Clustering was performed on all genes in the first three
+
+```{r Itch DEG only of Z-scored Euclidean-clustered ordered pheatmap of DEGs, include = T, message = F, warning = F, echo = F, render = T}
+  ## Visualize the "Itch-related DEGs"
+pheatmap(mat = Zb[c(itch_DEG_index),2:9],
+         clustering_distance_rows = "euclidean",
+         color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
+         angle_col = 0,
+         treeheight_row = 35,
+         treeheight_col = 9,
+         cutree_rows = 4,
+         labels_row = Euclid_dist_ord_Genes[c(itch_DEG_index)])
+```
