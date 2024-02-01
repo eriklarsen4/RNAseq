@@ -83,13 +83,13 @@ library(readr) # For importing data and files
 
 + Before importing into `R`:
 
--   **save the Galaxy DESeq2 Output as a .CSV with headings** downloaded from `Galaxy.org` as a `.txt` file
+  -   **save the Galaxy DESeq2 Output as a .CSV with headings** downloaded from `Galaxy.org` as a `.txt` file
 
--   In `Microsoft Excel`, add a column that converts `log2 FC` to `% WT` Expression if not already done
--   (copy and paste the formula "`POWER(2,"_values_from_log2FC_cell")`" into the "formula" bar)
--   Save and import
+  -   In `Microsoft Excel`, add a column that converts `log2 FC` to `% WT` Expression if not already done
+  -   (copy and paste the formula "`POWER(2,"_values_from_log2FC_cell")`" into the "formula" bar)
+  -   Save and import
   
-  - Either click "`Import Dataset`" in the "`Environment Window`" pane and import the `.csv`, or follow the code below   
+    - Either click "`Import Dataset`" in the "`Environment Window`" pane and import the `.csv`, or follow the code below   
 
 ``` r
 aDRG = read.csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/RNAseq%20Data%20Files/DESeq2%20Expression%20Results.csv")
