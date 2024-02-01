@@ -1,10 +1,17 @@
 # RNAseq
 Template R code for bioinformatics analysis pipelines.
 
-RNAseq scripts (WGCNA, Hippocampus Bioinformatics, Bioinformatics) analyze gene expression changes in mice with Tmem184b gene trap. These use mRNA TPM and DESeq2 DGEA files.
-  WGCNA (as of now, "Manual Net Construction" script) creates TOMplots of TOMs or adjacencies as end-products of WGCNA.
-  Hippocampus Bioinformatics (to be renamed) creates MA and volcano plots. Performs downstream functional analysis of desired modules (through Enrichr metadatabase).
-  Bioinformatics (to be re-named) creates MA and volcano plots, and heatmaps of multiple transcriptomic comparison datasets; also performs downstream functional analysis through Enrichr metadatabase and creates barplots of these Enrichr results.
-        In progress: exporting WGCNA data compatible with cytoscape for network visualization.
+Markdown files encompass the analysis of various Illumina paired-end bulk RNAseq experiments
 
-Long-term goal: integration of RNAseq gene changes with protein-protein interaction network.
++ includes standard, high-level bioinformatics/transcriptomics visualizations, including:
+
+  + volcano plots
+  + MA plots
+  + heatmaps
+
++ also includes higher-level analyses on subsets of the data:
+
+  + gene ontology querying and statistical analysis
+    + visualizations as bar plots
+      
+  + weighted gene co-expression network
