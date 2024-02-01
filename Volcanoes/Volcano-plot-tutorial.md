@@ -75,21 +75,24 @@ library(readr) # For importing data and files
 
 ## Data Import
 
-+ The data to plot are the differential expression analysis results from `Usegalaxy.org`'s implementation of `DESeq2`
++ The data to plot for this tutorial are the differential expression analysis results from `Usegalaxy.org`'s implementation of `DESeq2`
 
 + Each gene for all samples was quantified and then compared between genotype
 
   + The statistical test was a `Wald Test` on `Salmon` pseudo-aligned read counts to determine which genes are differentially expressed 
 
-+ Before importing into `R`:
++ Import into `R`:
 
-  -   **save the Galaxy DESeq2 Output as a .CSV with headings** downloaded from `Galaxy.org` as a `.txt` file
+  -   Download the `Galaxy.org` `DESeq2` output `.txt` file from `Usegalaxy.org`
+    
+  -   **Save the Galaxy DESeq2 Output as a .CSV with headings**
 
-  -   In `Microsoft Excel`, add a column that converts `log2 FC` to `% WT` Expression if not already done
+  -   Open the `.csv` in `Microsoft Excel`
+  -   Add a column that converts `log2 FC` to `% WT` if not already done
   -   (copy and paste the formula "`POWER(2,"_values_from_log2FC_cell")`" into the "formula" bar)
-  -   Save and import
+  -   Save
   
-    - Either click "`Import Dataset`" in the "`Environment Window`" pane and import the `.csv`, or follow the code below   
+    - Import into `R` either by clicking "`Import Dataset`" in the "`Environment Window`" pane and selecting the `.csv`, or follow the template code below
 
 ``` r
 aDRG = read.csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/RNAseq%20Data%20Files/DESeq2%20Expression%20Results.csv")
@@ -102,10 +105,10 @@ aDRG = read.csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioin
   # or were outliers in terms of counts;
     # new dataframe should not contain any NAs in p-value columns
 
-aDRG3 = subset(aDRG, (!is.na(aDRG[,"AdjP"])))
+aDRG3 = subset(aDRG, (!is.na(aDRG[,"AdjP"]))) # notice the new variable, "aDRG3" in case I want to change future data manipulations
 
 
- # Filter the DEGs by removing rRNAs and mitochondrial tRNAs.
+ # Filter the DEGs by removing rRNAs and mitochondrial tRNAs
 
 aDRG9 = aDRG3 %>%
   filter(!grepl(aDRG3$GeneID, pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
