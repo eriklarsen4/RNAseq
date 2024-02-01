@@ -25,7 +25,7 @@ Erik Larsen
 
     1.  `Illumina FASTQ files` were pseudoaligned with the `Salmon` algorithm
   
-    2.  run through `Usegalaxy.org`’s `DESeq2` wrapper algorithm to obtain `DGEA files`
+    2.  run through `Usegalaxy.org`’s [DESeq2](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-014-0550-8) wrapper algorithm to obtain `DGEA files`
     
     3.  `Galaxy` also returned TPM data for use in transcriptional profiling (heatmaps)
 
