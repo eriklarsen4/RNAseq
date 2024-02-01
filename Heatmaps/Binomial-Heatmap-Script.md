@@ -5,17 +5,18 @@ Erik Larsen
 
 The following code was developed to display which differentially
 expressed genes are involved in a given number of `PANTHER` pathways
-using `ggplot2`.  
-The data was processed using `Salmon`, `DESeq2`, and run through another
-script in `Python` to acquire the proper data structure for `ggplot2` to
-handle below in a `geom_tile` call.  
-Other scripts use the `pheatmap` package for more traditional
-transcriptional profiling.
+using `ggplot2`. 
+
+The short, paired-end `Illumina` reads were pseudo-aligned with `Salmon`.
+
+Those `.sf` files were processed for `Differential Expression Analysis` (`DEA` or `GSEA`) with `Michael Love's` `DESeq2` algorithm.
+
+The results were processed with a `Python` script to acquire the proper data structure for `ggplot2` to
+handle below in a `geom_tile` call.
+
+[Other scripts](https://github.com/eriklarsen4/RNAseq/blob/master/Heatmaps/Bioinformatics.md) use the `pheatmap` package for more traditional transcriptional profiling-- **those** depict a continuous color gradient of RNA expression across samples for a given gene, indicating a Z-scored magnitude of expression.
 
 ## Environment Prep
-
-Note that code can be sectioned and condensed with the `Alt + O`
-command.
 
 List of packages for this script:
 [tidyverse](https://cran.r-project.org/package=tidyverse),
