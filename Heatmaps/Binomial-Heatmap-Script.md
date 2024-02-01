@@ -9,7 +9,7 @@ using `ggplot2`.
 
 The short, paired-end `Illumina` reads were pseudo-aligned with `Salmon`.
 
-Those `.sf` files were processed for `Differential Expression Analysis` (`DEA` or `GSEA`) with `Michael Love's` `DESeq2` algorithm.
+Those `.sf` files were processed for `Differential Expression Analysis` (`DEA` or `GSEA`) with [Michael Love's DESeq2 algorithm](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-014-0550-8).
 
 The results were processed with a `Python` script to acquire the proper data structure for `ggplot2` to
 handle below in a `geom_tile` call.
