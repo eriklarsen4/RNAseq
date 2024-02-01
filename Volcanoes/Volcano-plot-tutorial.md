@@ -3,6 +3,8 @@ Volcano plots with ggplot
 Erik Larsen
 7/16/2021
 
+## Introduction
+
 I developed the following code as a tutorial for graphical analysis of short-read, `Illumina` transcriptomic data in `Dr. Martha Bhattacharya`'s lab at UA. For more details on the background, see [here](https://github.com/eriklarsen4/RNAseq/blob/master/Heatmaps/Bioinformatics.md).
 
 The plots, generated with the [ggplot2 R
@@ -37,22 +39,26 @@ library(stats4)
 library(readr) # For importing data and files
 ```
 
+## Background
+
 Our paired-end RNA-seq transcript reads (short reads) were first aligned using `Salmon`,
 a pseudo-alignment algorithm, in UA's HPC virtual computing environment
 
-  + basically, `Salmon` assigns ("maps") all the read fragments (`fastq` files) from an
-  + experiment according to a provided reference sequence
-  +   in this case, the reference sequence is the mouse transcriptome
-  + having aligned all the read fragments, `Salmon` quantifies each gene's total number of fragments:
-      + how many read fragments aligned to the transcriptome reference sequence for each gene
-  + in this analysis, the reads do *not* account for alternative splicing, though `Salmon` is capable of doing so
+Basically, `Salmon` assigns ("maps") all the read fragments (`fastq` files) from an
+experiment according to a provided reference sequence. In this case, the reference sequence is the mouse transcriptome.
+
+Having aligned all the read fragments, `Salmon` quantifies each gene's total number of fragments
+      (how many read fragments aligned to the transcriptome reference sequence for each gene)
       
-      + in other words, for a given sample, this workflow aligned read fragments according to a reference
-      + transcript sequence that did not distinguish different isoforms (splice variants)--
-      + all reads within the gene's open reading frame are pooled together and not separated out for each isoform
-        
-        + one file contains each gene's read counts (transcripts per million reads) for a given sample
-        + (1 file = all reads for each gene from one mouse's neurons)
+In this analysis, the reads do *not* account for alternative splicing, though `Salmon` is capable of doing so
+      
+In other words, for a given sample, this workflow aligned read fragments according to a reference
+transcript sequence that did not distinguish different isoforms (splice variants)--
+    
+  all reads within the gene's open reading frame are pooled together and not separated out for each isoform
+  one file contains each gene's read counts (transcripts per million reads) for a given sample
+  
+  (1 file = all reads for each gene from one mouse's neurons)
 
 Import the `Usegalaxy.org` data frame from the lab server
 (or [here](https://github.com/eriklarsen4/RNAseq/blob/master/Data/RNASeqRepResults.csv)) that contains
@@ -85,7 +91,11 @@ are differentially expressed.
 
 ``` r
 aDRG = read.csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/RNAseq%20Data%20Files/DESeq2%20Expression%20Results.csv")
-  
+```
+
+## Data Processing
+
+``` r
   # Filter out (subset) genes that went undetected
   # or were outliers in terms of counts;
     # new dataframe should not contain any NAs in p-value columns
@@ -117,8 +127,6 @@ aDRG9$labs[which(aDRG9$AdjP >= 0.05)]= "Non-DEGs"
 
 aDRG_DEG_list = c(aDRG9$GeneID[which(aDRG9$labs == "DEGs")])
 ```
-
-## Data processing
 
 How many genes are significantly different from WT expression?
 
