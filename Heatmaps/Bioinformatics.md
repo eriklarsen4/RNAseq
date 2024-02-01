@@ -102,10 +102,12 @@ Subset from the variable a few databases of interest.
 ``` r
 
     # Store it as a variable for better visualization and eventual subsetting
+
 DBs = listEnrichrDbs()
 
   # View the variable in the editor to find the relevant databases and their indeces for subsetting
   # (click on the dataframe in the Global Environment and manually peruse)
+
 diff_DBs = DBs %>%
   dplyr::filter(grepl(libraryName, pattern = "Transcription_Factor_PPIs|Reactome_2022|Most_Popular_Genes|ENCODE_TF|GPCR|Enrichr")) %>%
   dplyr::select(libraryName) %>%
@@ -126,6 +128,7 @@ enrichr.
 
 ``` r
   # Create dataframes to store returned analyses as variables
+
 GO_Processes = data.frame()
 GO_Cell_Comps = data.frame()
 GO_Mol_Funcs = data.frame()
@@ -167,26 +170,35 @@ aDRG = read.csv("~/GitHub/RNAseq/Data/DESeq2 Expression Results.csv")
 
   # Subset genes that went undetected or were outliers in terms of counts;
   # new dataframe should not contain any NAs in p-value columns
+
 aDRG3 = subset(aDRG, (!is.na(aDRG[,"AdjP"])))
 
+
  # Filter the DEGs by removing rRNAs and mitochondrial tRNAs, along with pseudogenes, etc.
+
 aDRG9 = aDRG3 %>% filter(!grepl(GeneID,
                                 pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
 #mt.+.?$|  <-- string identifier for mitochondrial tRNAs
 
+
   # Create a column in the DESeq2 dataframe that scales the Adjusted P-value by log-base 10
+
 aDRG9$log10ADJP = -log10(aDRG9$AdjP)
 
 
   # Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
     # First create the column and use Gene IDs as place-holders
+
 aDRG9$g.o.i. = aDRG9$GeneID
 
 
   # Replace DEGs with the string, "DEGs"
+
 aDRG9$g.o.i.[which(aDRG9$AdjP <= 0.05)]= "DEGs"
 
+
   # Replace the remaining genes with "Non-DEGs"
+
 aDRG9$g.o.i.[which(aDRG9$AdjP >= 0.05)]= "Non-DEGs"
 
 aDRG_DEG_list = c(aDRG9$GeneID[which(aDRG9$g.o.i. == "DEGs")])
@@ -307,6 +319,7 @@ Import the adult transcriptional profile (normalized TPM).
   # Import the adult normalized counts file.
     # These are expression estimates for each gene, for each sample/replicate,
     # where each gene's value is normalized to its sample's effect size
+
 aTPM = read_csv("~/GitHub/ggplot-scripts/Bioinformatics/RNAseq Data Files/RNASeqRepResults.csv", col_names = TRUE)
 
   # Rename columns
@@ -314,13 +327,14 @@ colnames(aTPM) = c("GeneID", "WT1", "WT2", "WT3", "WT4", "Mut1", "Mut2", "Mut3",
 
 
   # Subset by only genes in the filtered aDRG DESeq2 file
+
 ExpProfile = aTPM[aTPM$GeneID %in% c(aDRG9$GeneID),]
 ```
 
 Create a function that makes a dataframe housing the Z-scored
 transcriptional profile to then graph using `pheatmap`.
 
-Run the Z-score function.
+Pass the Profile variable through the Z-score function.
 
 ``` r
 Find_Row_Z(Expression_Profile = ExpProfile)
@@ -330,22 +344,30 @@ Arrange the data for generating a full transcriptional profile.
 
 ``` r
   # Don't remove non-DEGs
+
 Z = Z %>%
   filter(GeneID %in% aDRG9$GeneID[])
 
+
   # Create a list of gene names ordered by euclidean distance by which to re-order the dataframe
+
 Euclid_dist_order = hclust(dist(Z[,c(2:9)], method = "euclidean"))$order
 
+
   # The names (not the numbers)
+
 Euclid_dist_ord_Genes = c(Z$GeneID[Euclid_dist_order])
 
+
   # Transform again to order by clusters (Euclidean distances)
+
 Za = Z %>%
   mutate(GeneID =  factor(GeneID, levels = Euclid_dist_ord_Genes)) %>%
   arrange(GeneID)
 
 
   # Find where the "Itch-related DEGs" are in the clustered matrix subsetted to DEGs for the heatmap
+
 itch_DEGs = c("Il31ra", "Cysltr2", "Npy2r", "Sst",
               "Htr1a", "P2rx3", "Lpar3", "Lpar5",
               "Scn11a", "Scn10a", "Mrgprd", "Trpc6",
@@ -383,6 +405,7 @@ neurons**.
 
 ``` r
  # Visualize the Z-scored, Euclidean-clustered and ordered gene TPMs across replicates with "pheatmap"
+
 pheatmap(mat = Za[,2:9],
          color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
          clustsering_distance_rows = "euclidean",
@@ -393,14 +416,14 @@ pheatmap(mat = Za[,2:9],
          show_rownames = F)
 ```
 
-![](Bioinformatics_files/figure-gfm/Full%20Z-scored,%20Euclidean-clustered%20and%20ordered%20pheatmap-1.png)<!-- -->
+![](https://github.com/eriklarsen4/RNAseq/blob/master/Visualizations/Full%20Z-scored%2C%20Euclidean-clustered%20and%20ordered%20pheatmap-1.png)<!-- -->
 
 ## Adult Zoom
 
 **View the cluster near Tmem184b**
 
 ``` r
-  ## Visualize around the Tmem184b cluster
+  # Visualize around the Tmem184b cluster
 
 pheatmap(mat = Za[1597:1637,2:9],
          color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
@@ -411,14 +434,14 @@ pheatmap(mat = Za[1597:1637,2:9],
          labels_row = Euclid_dist_ord_Genes[1597:1637])
 ```
 
-![](Bioinformatics_files/figure-gfm/Tmem184b%20cluster%20Zoom%20on%20Z-scored%20Euclidean-clustered%20and%20ordered%20pheatmap-1.png)<!-- -->
+![](https://github.com/eriklarsen4/RNAseq/blob/master/Visualizations/Tmem184b%20cluster%20Zoom%20on%20Z-scored%20Euclidean-clustered%20and%20ordered%20pheatmap-1.png)<!-- -->
 
 ## Adult Itch
 
 **View the cluster including select itch transcripts**.
 
 ``` r
-  ## Visualize the "Itch-related DEGs"
+  # Visualize the "Itch-related DEGs"
 
 pheatmap(mat = Za[c(itch_index),2:9],
          color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
@@ -430,14 +453,14 @@ pheatmap(mat = Za[c(itch_index),2:9],
          labels_row = Euclid_dist_ord_Genes[c(itch_index)])
 ```
 
-![](Bioinformatics_files/figure-gfm/Itch%20trx%20cluster%20Zoom%20on%20Z-scored%20Euclidean-clustered%20and%20ordered%20pheatmap-1.png)<!-- -->
+![](https://github.com/eriklarsen4/RNAseq/blob/master/Visualizations/Itch%20trx%20cluster%20Zoom%20on%20Z-scored%20Euclidean-clustered%20and%20ordered%20pheatmap-1.png)<!-- -->
 
 ## Adult DEGs Only
 
 Arrange the data to include only DEGs.
 
 ``` r
-  ## Transform the profile to include only DEGs
+  # Transform the profile to include only DEGs
 
 Zb = Z %>%
   filter(GeneID %in% aDRG9$GeneID[c(1:376)])
@@ -448,19 +471,19 @@ Prep it for a heatmap as before (not shown).
 **Plot the results of the profile of only DEGs in Tmem184b-mutant DRG
 neurons.**
 
-![](Bioinformatics_files/figure-gfm/Z-scored%20Euclidean-clustered%20and%20ordered%20pheatmap%20of%20DEGS-1.png)<!-- -->
+![](https://github.com/eriklarsen4/RNAseq/blob/master/Visualizations/Z-scored%20Euclidean-clustered%20and%20ordered%20pheatmap%20of%20DEGS-1.png)<!-- -->
 
 ## Adult DEGs Only Zoom
 
 **Zoom to Tmem184b**
 
-![](Bioinformatics_files/figure-gfm/Tmem184b%20Cluster%20Zoom%20Z-scored%20Euclidean-clustered%20ordered%20pheatmap%20of%20DEGs-1.png)<!-- -->
+![](https://github.com/eriklarsen4/RNAseq/blob/master/Visualizations/Tmem184b%20Cluster%20Zoom%20Z-scored%20Euclidean-clustered%20ordered%20pheatmap%20of%20DEGs-1.png)<!-- -->
 
 ## Adult DEGs Only Itch Zoom
 
 **Zoom to the area comprising many itch genes**
 
-![](Bioinformatics_files/figure-gfm/Itch%20DEG%20Cluster%20Zoom%20Z-scored%20Euclidean-clustered%20ordered%20pheatmap%20of%20DEGs-1.png)<!-- -->
+![](https://github.com/eriklarsen4/RNAseq/blob/master/Visualizations/Itch%20DEG%20Cluster%20Zoom%20Z-scored%20Euclidean-clustered%20ordered%20pheatmap%20of%20DEGs-1.png)<!-- -->
 
 **View select itch genes**.
 
@@ -469,4 +492,4 @@ neurons.**
 
 -   Clustering was performed on all genes in the first three
 
-![](Bioinformatics_files/figure-gfm/Itch%20DEG%20only%20of%20Z-scored%20Euclidean-clustered%20ordered%20pheatmap%20of%20DEGs-1.png)<!-- -->
+![](https://github.com/eriklarsen4/RNAseq/blob/master/Visualizations/Itch%20DEG%20only%20of%20Z-scored%20Euclidean-clustered%20ordered%20pheatmap%20of%20DEGs-1.png)<!-- -->
