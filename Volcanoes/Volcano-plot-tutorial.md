@@ -42,23 +42,33 @@ library(readr) # For importing data and files
 ## Background
 
 Our paired-end RNA-seq transcript reads (short reads) were first aligned using `Salmon`,
-a pseudo-alignment algorithm, in UA's HPC virtual computing environment
+a pseudo-alignment algorithm, in UA's HPC virtual computing environment.
+
 
 Basically, `Salmon` assigns ("maps") all the read fragments (`fastq` files) from an
 experiment according to a provided reference sequence. In this case, the reference sequence is the mouse transcriptome.
 
+
 Having aligned all the read fragments, `Salmon` quantifies each gene's total number of fragments
-      (how many read fragments aligned to the transcriptome reference sequence for each gene)
+      (how many read fragments aligned to the transcriptome reference sequence for each gene).
+
       
-In this analysis, the reads do *not* account for alternative splicing, though `Salmon` is capable of doing so
-      
-In other words, for a given sample, this workflow aligned read fragments according to a reference
-transcript sequence that did not distinguish different isoforms (splice variants)--
+In this analysis, the reads do *not* account for alternative splicing, though `Salmon` is capable of doing so.
+
+
+In other words, for a given sample, this workflow aligns all the read fragments for each gene according to a reference
+transcript sequence. This is done for all genes and this method does not distinguish between different splice variants which
+*can* yield different protein isoforms.
     
-  all reads within the gene's open reading frame are pooled together and not separated out for each isoform
-  one file contains each gene's read counts (transcripts per million reads) for a given sample
+  + all reads within the gene's open reading frame are pooled together and not separated out for each isoform
+
+    + for example, [*Tmem184b*](https://www.ncbi.nlm.nih.gov/gene/223693) has 5 splice variants and under this workflow,
+      all reads within the 1st variant's reading frame are counted across all variants, even if the cells are actually
+      transcribing a lot of one variant and none of another
+
+    + so, one file contains each gene's primary splice variant's read counts (transcripts per million reads) for a given sample
   
-  (1 file = all reads for each gene from one mouse's neurons)
+      + (1 file = all reads for each gene from one mouse's neurons)
 
 Import the `Usegalaxy.org` data frame from the lab server
 (or [here](https://github.com/eriklarsen4/RNAseq/blob/master/Data/RNASeqRepResults.csv)) that contains
