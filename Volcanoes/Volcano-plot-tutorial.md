@@ -3,61 +3,76 @@ Volcano plots with ggplot
 Erik Larsen
 7/16/2021
 
-I developed the following code as a tutorial for graphical analysis of long-read, `Illumina` transcriptomic data in `Dr. Martha Bhattacharya`'s lab at UA. We processed the reads on a 3rd party server,
-[Usegalaxy.org](https://usegalaxy.org/), using a bioinformatics standard
-differential expression algorithm, known as
-[DESeq2](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-014-0550-8).
+I developed the following code as a tutorial for graphical analysis of short-read, `Illumina` transcriptomic data in `Dr. Martha Bhattacharya`'s lab at UA. For more details on the background, see [here](https://github.com/eriklarsen4/RNAseq/blob/master/Heatmaps/Bioinformatics.md).
 
 The plots, generated with the [ggplot2 R
-package](https://cran.r-project.org/package=ggplot2) package are standard for differential gene expression analysis, but I've also added a bit more customization. This `Github R Markdown` is a generic tutorial for those less-experienced with `R` and/or plotting and deriving insights from RNA-seq data.
+package](https://cran.r-project.org/package=ggplot2) package are standard for `differential gene expression analysis` (`DEA` or `GSEA`), but I've also added a bit more customization.
+
+This `Github R Markdown` is a generic tutorial for those less-experienced with `R` and/or plotting and deriving insights from RNA-seq data.
 
 ## Environment Prep
 
 Upload the packages that include `ggplot2` ("Grammar of Graphics")
 
-  + `ggplot2` contains a set of functions that produce images, by mapping data
+  + `ggplot2` contains a set of functions that produce images by mapping data
 to aesthetic properties (e.g. colors to gene symbols)
 
 ``` r
-  ## Install the tidyverse and reshape2 packages if not already done
+  ## Install the tidyverse and reshape2 packages to your default R library if not already done
     ## For example
 #install.packages("tidyverse")
 #install.packages("reshape2")
 
-  # Load them from your R package library
-## For data wrangling
-  ## (manipulating dataframes):
+  # Load the packages from your default R package library
+# For data wrangling (manipulating dataframes):
+
 library(tidyverse)
 library(plyr)
 library(dplyr)
 library(reshape2)
 
-library(ggplot2) ## For awesome, publication-quality graphs
-library(ggrepel) ## For labeling mapped data on those plots
+library(ggplot2) # For awesome, publication-quality graphs
+library(ggrepel) # For labeling mapped data on those plots
 library(stats4)
-library(readr) ## For importing data and files
+library(readr) # For importing data and files
 ```
 
-Our paired-end RNA-seq transcript reads were first aligned using `Salmon`, a pseudo alignment algorithm, in a virtual computing environment
+Our paired-end RNA-seq transcript reads (short reads) were first aligned using `Salmon`,
+a pseudo-alignment algorithm, in UA's HPC virtual computing environment
 
-  + basically, `Salmon` assigns ("maps") all the read fragments (`fastq` files) from an experiment according to a provided reference sequence
+  + basically, `Salmon` assigns ("maps") all the read fragments (`fastq` files) from an
+  + experiment according to a provided reference sequence
   +   in this case, the reference sequence is the mouse transcriptome
   + having aligned all the read fragments, `Salmon` quantifies each gene's total number of fragments:
-      + how many `Gene_X` read fragments aligned to the transcriptome reference `Gene_X` sequence
+      + how many read fragments aligned to the transcriptome reference sequence for each gene
   + in this analysis, the reads do *not* account for alternative splicing, though `Salmon` is capable of doing so
+      
+      + in other words, for a given sample, this workflow aligned read fragments according to a reference
+      + transcript sequence that did not distinguish different isoforms (splice variants)--
+      + all reads within the gene's open reading frame are pooled together and not separated out for each isoform
+        
+        + one file contains each gene's read counts (transcripts per million reads) for a given sample
+        + (1 file = all reads for each gene from one mouse's neurons)
 
-Import the `Usegalaxy.org` data frame from the lab server that contains
-mean transcript counts of all the *Tmem184b*<sup>GT/GT</sup> mice.
+Import the `Usegalaxy.org` data frame from the lab server
+(or [here](https://github.com/eriklarsen4/RNAseq/blob/master/Data/RNASeqRepResults.csv)) that contains
+mean transcript counts (not [the differential expression quantification file](https://github.com/eriklarsen4/RNAseq/blob/master/Data/DESeq2%20Expression%20Results.csv)!) of all the *Tmem184b*<sup>GT/GT</sup> mice
 
 ``` r
-aDRG_TPM = read_csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/RNAseq%20Data%20Files/RNASeqRepResults.csv", col_names = c("GeneID", "WT", "Mut"))
+aDRG_TPM = read_csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/RNAseq%20Data%20Files/RNASeqRepResults.csv",
+                    col_names = c("GeneID", "WT", "Mut")
+                    )
 ```
 
-Import the differential expression analysis data if not already done
-(`Import Dataset` in the `Environment Window`); it is directly called
-via the script below. These are the `DESeq2` results from
-`Usegalaxy.org`, computing a `Wald Test` on `Salmon` pseudoaligned read counts
-files to determine which genes are differentially expressed.
+Now, import the differential expression analysis data (`Import Dataset` in the `Environment Window`)
+
+This is done directly in the script below
+
+Again, these are the `DESeq2` results from `Usegalaxy.org`.
+Each gene for all samples were quantified and then compared by group
+
+The statistical test was a `Wald Test` on `Salmon` pseudo-aligned read counts to determine which genes
+are differentially expressed.
 
 -   Before importing into `R`, **save the Galaxy DESeq2 Output**
     (dowloaded from `Galaxy.org` as a `.txt` file) **as a CSV** with headings to
@@ -71,22 +86,33 @@ files to determine which genes are differentially expressed.
 ``` r
 aDRG = read.csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/RNAseq%20Data%20Files/DESeq2%20Expression%20Results.csv")
   
-  ## Filter out (subset) genes that went undetected
-  ## or were outliers in terms of counts;
-    ## new dataframe should not contain any NAs in p-value columns
+  # Filter out (subset) genes that went undetected
+  # or were outliers in terms of counts;
+    # new dataframe should not contain any NAs in p-value columns
+
 aDRG3 = subset(aDRG, (!is.na(aDRG[,"AdjP"])))
 
- ## Filter the DEGs by removing rRNAs and mitochondrial tRNAs.
+
+ # Filter the DEGs by removing rRNAs and mitochondrial tRNAs.
+
 aDRG9 = aDRG3 %>%
   filter(!grepl(aDRG3$GeneID, pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
 #mt.+.?$|  <-- string identifier for mitochondrial tRNAs
 
-  ## Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
-    ## First create the column and use Gene IDs as place-holders
+
+  # Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
+    # First create the column and use Gene IDs as place-holders
+
 aDRG9$labs = aDRG9$GeneID
-  ## Replace DEGs with the string, "DEGs"
+
+
+  # Replace DEGs with the string, "DEGs"
+
 aDRG9$labs[which(aDRG9$AdjP <= 0.05)]= "DEGs"
-  ## Replace the remaining genes with "Non-DEGs"
+
+
+  # Replace the remaining genes with "Non-DEGs"
+
 aDRG9$labs[which(aDRG9$AdjP >= 0.05)]= "Non-DEGs"
 
 aDRG_DEG_list = c(aDRG9$GeneID[which(aDRG9$labs == "DEGs")])
@@ -118,7 +144,7 @@ length(
     ## [1] 205
 
 Subset the dataframe to select differentially expressed genes with
-Adjusted P-values &lt; 0.05 for use in pathway analysis tools (see [GO Analysis.md](https://github.com/eriklarsen4/Proteomics/blob/main/GO%20Analysis/GO-Analysis.md) to find potential mechanistic
+Adjusted P-values &lt; 0.05 for use in pathway analysis tools (see [GO Analysis.md](https://github.com/eriklarsen4/RNAseq/blob/master/GO%20Analysis/GO-Analysis.md) to find potential mechanistic
 pathways or other genes/interactions of interest).
 
 ``` r
@@ -126,7 +152,9 @@ HITS.01 = subset(aDRG9, aDRG9$AdjP <= 0.01)
 HITS.05 = subset(aDRG9, aDRG9$AdjP <= 0.05)
 HITS.10 = subset(aDRG9, aDRG9$AdjP <= 0.10)
 
-  ## Create a new data frame of the average reads from both genotypes of genes with an Adjusted P-value < 0.05
+
+  # Create a new data frame of the average reads from both genotypes of genes with an Adjusted P-value < 0.05
+
 Candidate_Screen = aDRG_TPM %>%
   filter(GeneID %in% HITS.05$GeneID)
 ```
@@ -144,26 +172,34 @@ somewhat shrunk in a manner that is fit for viewing
 aDRG9$log10ADJP = -log10(aDRG9$AdjP)
 ```
 
-Create a new column that we will use for added visualization insight. Totally arbitrary, but we’ll call them
+Create a new column to use for added visualization insight. Totally arbitrary, but I called them
 “genes of interest” or “`g.o.i.`” for short.
 
 ``` r
-  ## Make the new column a column of characters.
-    ## Easiest way is to just use ' "" ' or another column already populated by strings (characters)
+  # Make the new column a column of characters.
+    # Easiest way is to just use ' "" ' or another column already populated by strings (characters)
+
 aDRG9$g.o.i. = aDRG9$GeneID
 
-    ## Alternatively, you can use dplyr like so (uncomment to execute the command):
+
+    # Alternatively, you can use dplyr like so (uncomment, aka remove the hashtags, to execute the command):
+
 # aDRG9 = aDRG9 %>%
 #  dplyr::mutate(g.o.i. = GeneID)
 
-  ## Fill the points with appropriately indexed data;
-    ## "D.E.G.s", aka "Differentially Expressed Genes",
-    ## defined as being "genes of interest" with Adjusted P-Values of <= 0.05
+  # Fill the points with appropriately-indexed data;
+    # "D.E.G.s", aka "Differentially Expressed Genes",
+    # defined as being "genes of interest" with Adjusted P-Values of <= 0.05
+
+    # In other words, assign the string label, "D.E.G.s", to the rows of the g.o.i. column of the aDRG9 dataframe
+    # where AdjP values are less than or equal to 0.05; "Non-D.E.G.s" to the rows of the g.o.i. column with AdjP values
+    # greater than 0.05
+  
 aDRG9$g.o.i.[which(aDRG9$AdjP <= 0.05)] = "D.E.G.s"
 
 aDRG9$g.o.i.[which(aDRG9$AdjP > 0.05)] = "Non-D.E.G.s"
 
-  ## dplyr alternative:
+  # dplyr alternative:
 #aDRG9 = aDRG9 %>%
 #  dplyr::mutate(g.o.i. = case_when(AdjP <= 0.05 ~ "D.E.G.s",
 #                                    TRUE ~ "Non-D.E.G.s"))
@@ -173,7 +209,9 @@ Create labels on points we’re interested in labeling in the volcano
 plots.
 
 ``` r
-  ## Create the column, "labs"; hide all of the text labels with: ""
+  # Create the column, "labs"; by initializing the column values with "",
+  # any genes containing only "" will not show up in the volcano plot
+
 aDRG9$labs = ""
 ```
 
@@ -184,7 +222,9 @@ extreme data points on the plot.
 ``` r
 ix_label1 = which(aDRG9$log10ADJP > 50)
 
-  ## Fill in the labels
+
+  # Fill in the labels
+
 aDRG9$labs[c(ix_label1)] = aDRG9$GeneID[c(ix_label1)]
 ```
 
@@ -198,7 +238,8 @@ aDRG9$labs[c(ix_label1)] = aDRG9$GeneID[c(ix_label1)]
 Subset the data by each different group within that g.o.i. column
 
 ``` r
-  ## Find axis limits
+  # Find axis limits
+
 min(aDRG9$log2.FC.)
 ```
 
@@ -260,7 +301,8 @@ vol1 = ggplot(data = aDRG9) +
 ```
 
 ``` r
-  ## Overwrite the variable, adding labels
+  # Overwrite the ggplot variable, adding labels
+
 vol1 = vol1 + geom_text_repel(data = aDRG9,
                               x = aDRG9$log2.FC.,
                               y = aDRG9$log10ADJP,
@@ -272,43 +314,52 @@ vol1 = vol1 + geom_text_repel(data = aDRG9,
 Plot the first volcano
 
 ``` r
-  ## Plot the volcano
+  # Plot the volcano
+
 vol1
 ```
 
-![](https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/Plots/Broad%20aDRG%20Volcano-1.png)<!-- -->
+![](https://github.com/eriklarsen4/RNAseq/blob/master/Visualizations/Broad%20aDRG%20Volcano-1.png)<!-- -->
 
 ## Second volcano plot
 
 Adding a little more specific data..
 
 ``` r
-  ## Re-set the mapping columm
+  # Re-set the mapping columm
+
 aDRG9$g.o.i. = ""
 
-  ## Fill the points with appropriately indexed data:
-    ## Notable pruriceptor genes defined as being "genes of interest", with ADJPs of <= 0.05
+
+  # Fill the points with appropriately indexed data:
+    # Notable pruriceptor genes defined as being "genes of interest", with ADJPs of <= 0.05
+
 aDRG9$g.o.i.[
   c(2,5,8,9,13,14,20,30,33,44,51,69,75,95,112,122,136,192,230,248,327,328,329,331)]= "Itch-related D.E.G.s"
 
-    ## Fill the DEGs not related to itch
+
+    # Fill the DEGs not related to itch
+
 aDRG9$g.o.i.[c(1:376)][
   -c(2,5,8,9,13,14,20,30,33,44,51,69,75,95,112,122,136,192,230,248,327,328,329,331)] = "D.E.G.s"
 
-    ## Fill the rest (Non-DEGs)
+
+    # Fill the rest (Non-DEGs)
+
 aDRG9$g.o.i.[which(aDRG9$AdjP > 0.05)] = "Non-D.E.G.s"
 ```
 
 Add new labels
 
 ``` r
-  ## Create a new "labs" column, though we could re-use the old one
+  # Create a new "labs" column, though we could re-use the old one
+
 aDRG9$labs2 = ""
 
 aDRG9$labs2[c(2,5,8,9,13,20,30,51,112,331)] = aDRG9$GeneID[c(2,5,8,9,13,20,30,51,112,331)]
 ```
 
-+ Store the new graph as a new variable
++ Store the new graph as a new variable (*vol2*)
 + add a new subset
 + zoom in
 
@@ -338,7 +389,8 @@ vol2 = ggplot(data = aDRG9) +
 ```
 
 ``` r
-  ## Overwrite the variable, adding labels
+  # Overwrite the new ggplot variable, adding the new labels
+
 vol2 = vol2 + geom_text_repel(data = aDRG9,
                               x = aDRG9$log2.FC.,
                               y = aDRG9$log10ADJP,
@@ -350,8 +402,9 @@ vol2 = vol2 + geom_text_repel(data = aDRG9,
 Plot the second volcano
 
 ``` r
-  ## Plot the volcano
+  # Plot the volcano
+
 vol2
 ```
 
-![](https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/Plots/Itch%20Volcano-1.png)<!-- -->
+![](https://github.com/eriklarsen4/RNAseq/blob/master/Visualizations/Itch%20Volcano-1.png)<!-- -->
