@@ -39,14 +39,14 @@ Erik Larsen
     package.
 
 -   The source script of this file is the [Bioinformatics R
-    Script](C:/Users/Erik/Desktop/BoxCopy/Programming%20Scripts%20and%20Data/Bio/Scripts/R/Broad/Bioinformatics%20Script.R).
+    Script](https://github.com/eriklarsen4/RNAseq/blob/master/Heatmaps/Bioinformatics%20Script.R).
 
 -   Standalone analyses or tutorials, including volcano plotting, and
     `gene ontology` and `pathway analysis` can be found in other
     `R/Github Markdown` files and scripts, [Gene Ontology Analysis
     Snippet](https://github.com/eriklarsen4/RNAseq/blob/master/GO%20Analysis/GO-Analysis.md)
     and [Volcano plot tutorial R
-    Markdown](https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/Volcano-plot-tutorial.md)
+    Markdown](https://github.com/eriklarsen4/RNAseq/blob/master/Volcanoes/Volcano-plot-tutorial.md)
 
 # Environment Prep
 
@@ -78,6 +78,7 @@ Load the remaining packages
 library(enrichR) ## Taps the Enrichr database; much better utility than the website
 
   ## For data wrangling (slicing/adding/removing/melting/rearranging dataframes and their columns and rows):
+
 library(tidyverse)
 # library(plyr)
 # library(dplyr)
@@ -88,6 +89,7 @@ library(readr) ## For importing data and files
 library(stringr) ## Awesome for manipulating strings
 
   ## Databases for downstream analyses of lists via gene ontology:
+
 library(biomaRt)
 #library(org.Hs.eg.db)
 library(org.Mm.eg.db)
@@ -105,6 +107,7 @@ Subset from the variable a few databases of interest.
 
 ``` r
     ## Store it as a variable for better visualization and eventual subsetting
+
 DBs = listEnrichrDbs()
 
   ## View the variable in the editor to find the relevant databases and their indeces for subsetting
@@ -130,6 +133,7 @@ enrichr.
 
 ``` r
   ## Create dataframes to store returned analyses as variables
+
 GO_Processes = data.frame()
 GO_Cell_Comps = data.frame()
 GO_Mol_Funcs = data.frame()
@@ -159,7 +163,7 @@ the function that will tap enrichr’s database and populate all the
 dataframes.
 
 ``` r
-source("~/GitHub/Proteomics/Functions/Enrichr Analysis Function.R")
+source("~/GitHub/RNAseq/Functions/Enrichr Analysis Function.R")
 ```
 
 ## Data import
@@ -167,25 +171,38 @@ source("~/GitHub/Proteomics/Functions/Enrichr Analysis Function.R")
 Import the adult `DRG DESeq2 file`
 
 ``` r
-aDRG = read.csv("~/GitHub/ggplot-scripts/Bioinformatics/RNAseq Data Files/DESeq2 Expression Results.csv")
+aDRG = read.csv("~/GitHub/RNAseq/Data/DESeq2 Expression Results.csv")
 
-  ## Filter (subset) genes that went undetected or were outliers in terms of counts;
+  ## Subset genes that went undetected or were outliers in terms of counts;
   ## new dataframe should not contain any NAs in p-value columns
+
 aDRG3 = subset(aDRG, (!is.na(aDRG[,"AdjP"])))
+
  ## Filter the DEGs by removing rRNAs and mitochondrial tRNAs, along with pseudogenes, etc.
+
 aDRG9 = aDRG3 %>% filter(!grepl(GeneID,
                                 pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
 #mt.+.?$|  <-- string identifier for mitochondrial tRNAs
 
+
   ## Create a column in the DESeq2 dataframe that scales the Adjusted P-value by log-base 10
+
 aDRG9$log10ADJP = -log10(aDRG9$AdjP)
+
 
   ## Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
     ## First create the column and use Gene IDs as place-holders
+
 aDRG9$g.o.i. = aDRG9$GeneID
+
+
   ## Replace DEGs with the string, "DEGs"
+
 aDRG9$g.o.i.[which(aDRG9$AdjP <= 0.05)]= "DEGs"
+
+
   ## Replace the remaining genes with "Non-DEGs"
+
 aDRG9$g.o.i.[which(aDRG9$AdjP >= 0.05)]= "Non-DEGs"
 
 aDRG_DEG_list = c(aDRG9$GeneID[which(aDRG9$g.o.i. == "DEGs")])
@@ -306,11 +323,17 @@ Import the adult transcriptional profile (normalized TPM).
   ## Import the adult normalized counts file.
     ## These are expression estimates for each gene, for each sample/replicate,
     ## where each gene's value is normalized to its sample's effect size
+
 aTPM = read_csv("~/GitHub/ggplot-scripts/Bioinformatics/RNAseq Data Files/RNASeqRepResults.csv", col_names = TRUE)
+
+
   ## Rename columns
+
 colnames(aTPM) = c("GeneID", "WT1", "WT2", "WT3", "WT4", "Mut1", "Mut2", "Mut3", "Mut4")
 
+
   ## Subset by only genes in the filtered aDRG DESeq2 file
+
 ExpProfile = aTPM[aTPM$GeneID %in% c(aDRG9$GeneID),]
 ```
 
@@ -327,20 +350,30 @@ Arrange the data for generating a full transcriptional profile.
 
 ``` r
   ## Don't remove non-DEGs
+
 Z = Z %>%
   filter(GeneID %in% aDRG9$GeneID[])
 
+
   ## Create a list of gene names ordered by euclidean distance by which to re-order the dataframe
+
 Euclid_dist_order = hclust(dist(Z[,c(2:9)], method = "euclidean"))$order
+
+
   ## The names (not the numbers)
+
 Euclid_dist_ord_Genes = c(Z$GeneID[Euclid_dist_order])
 
+
   ## Transform again to order by clusters (Euclidean distances)
+
 Za = Z %>%
   mutate(GeneID =  factor(GeneID, levels = Euclid_dist_ord_Genes)) %>%
   arrange(GeneID)
 
+
   ## Find where the "Itch-related DEGs" are in the clustered matrix subsetted to DEGs for the heatmap
+
 itch_DEGs = c("Il31ra", "Cysltr2", "Npy2r", "Sst",
               "Htr1a", "P2rx3", "Lpar3", "Lpar5",
               "Scn11a", "Scn10a", "Mrgprd", "Trpc6",
@@ -355,10 +388,12 @@ for( i in 1:length(itch_DEGs)){
 itch_index = temp
 #itch_index
 
+
   ## Confirm by indexing; copy and paste to customize the clustered heatmap
 #Euclid_dist_ord_Genes[c(itch_index)]
   ## Confirm the location/order of the transformed matrix/dataframe
   ## Should be "Il31ra"
+
 Za[itch_index[1],]
 ```
 
@@ -376,6 +411,7 @@ neurons**.
 
 ``` r
  ## Visualize the Z-scored, Euclidean-clustered and ordered gene TPMs across replicates with "pheatmap"
+
 pheatmap(mat = Za[,2:9],
          color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
          clustsering_distance_rows = "euclidean",
@@ -394,6 +430,7 @@ pheatmap(mat = Za[,2:9],
 
 ``` r
   ## Visualize around the Tmem184b cluster
+
 pheatmap(mat = Za[1597:1637,2:9],
          color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
          clustsering_distance_rows = "euclidean",
@@ -411,6 +448,7 @@ pheatmap(mat = Za[1597:1637,2:9],
 
 ``` r
   ## Visualize the "Itch-related DEGs"
+
 pheatmap(mat = Za[c(itch_index),2:9],
          color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
          clustsering_distance_rows = "euclidean",
@@ -429,6 +467,7 @@ Arrange the data to include only DEGs.
 
 ``` r
   ## Transform the profile to include only DEGs
+
 Zb = Z %>%
   filter(GeneID %in% aDRG9$GeneID[c(1:376)])
 ```
