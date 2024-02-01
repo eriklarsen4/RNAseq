@@ -12,6 +12,40 @@ package](https://cran.r-project.org/package=ggplot2) are standard for `different
 
 This `Github Markdown` is a generic tutorial for those less-experienced with `R` and/or plotting and deriving insights from RNA-seq data.
 
+## Background
+
++ Our paired-end RNA-seq transcript reads (short reads) were first aligned using `Salmon`,
+a pseudo-alignment algorithm, in UA's HPC virtual computing environment
+
+
++ Basically, `Salmon` assigns ("maps") all the read fragments (`fastq` files) from an
+experiment according to a provided reference sequence. In this case, the reference sequence is the mouse transcriptome
+
+
++ Having aligned all the read fragments, `Salmon` quantifies each gene's total number of fragments
+  (how many read fragments aligned to the transcriptome reference sequence for each gene)
+
+      
++ In this analysis, the reads *do not* account for alternative splicing, though `Salmon` is capable of doing so
+
+
++ In other words, for a given sample, this workflow aligns all the read fragments for each gene according to a reference
+transcript sequence
+
+  + This is done for all genes
+  + This method does not distinguish between different splice variants which *can yield different protein isoforms*
+    
+  + All reads within the gene's open reading frame are pooled together and not separated out for each isoform
+
+    + For example, [*Tmem184b*](https://www.ncbi.nlm.nih.gov/gene/223693) has 5 splice variants and under this workflow
+
+      + All reads within the 1st *Tmem184b* variant's reading frame are counted across *all* variants, **even if the cells are actually
+      transcribing a lot of one variant and none of another**
+
+    + So, one file contains each gene's primary splice variant's read counts (transcripts per million reads) for a given sample
+  
+      + (1 file = all reads for each gene from one mouse's neurons)
+
 ## Environment Prep
 
 Upload the packages that include `ggplot2` ("Grammar of Graphics")
@@ -39,63 +73,23 @@ library(stats4)
 library(readr) # For importing data and files
 ```
 
-## Background
+## Data Import
 
-Our paired-end RNA-seq transcript reads (short reads) were first aligned using `Salmon`,
-a pseudo-alignment algorithm, in UA's HPC virtual computing environment.
++ The data to plot are the differential expression analysis results from `Usegalaxy.org`'s implementation of `DESeq2`
 
++ Each gene for all samples was quantified and then compared between genotype
 
-Basically, `Salmon` assigns ("maps") all the read fragments (`fastq` files) from an
-experiment according to a provided reference sequence. In this case, the reference sequence is the mouse transcriptome.
+  + The statistical test was a `Wald Test` on `Salmon` pseudo-aligned read counts to determine which genes are differentially expressed 
 
++ Before importing into `R`:
 
-Having aligned all the read fragments, `Salmon` quantifies each gene's total number of fragments
-      (how many read fragments aligned to the transcriptome reference sequence for each gene).
+-   **save the Galaxy DESeq2 Output as a .CSV with headings** downloaded from `Galaxy.org` as a `.txt` file
 
-      
-In this analysis, the reads do *not* account for alternative splicing, though `Salmon` is capable of doing so.
-
-
-In other words, for a given sample, this workflow aligns all the read fragments for each gene according to a reference
-transcript sequence. This is done for all genes and this method does not distinguish between different splice variants which
-*can* yield different protein isoforms.
-    
-  + all reads within the gene's open reading frame are pooled together and not separated out for each isoform
-
-    + for example, [*Tmem184b*](https://www.ncbi.nlm.nih.gov/gene/223693) has 5 splice variants and under this workflow,
-      all reads within the 1st variant's reading frame are counted across all variants, even if the cells are actually
-      transcribing a lot of one variant and none of another
-
-    + so, one file contains each gene's primary splice variant's read counts (transcripts per million reads) for a given sample
+-   In `Microsoft Excel`, add a column that converts `log2 FC` to `% WT` Expression if not already done
+-   (copy and paste the formula "`POWER(2,"_values_from_log2FC_cell")`" into the "formula" bar)
+-   Save and import
   
-      + (1 file = all reads for each gene from one mouse's neurons)
-
-Import the `Usegalaxy.org` data frame from the lab server
-(or [here](https://github.com/eriklarsen4/RNAseq/blob/master/Data/RNASeqRepResults.csv)) that contains
-mean transcript counts (not [the differential expression quantification file](https://github.com/eriklarsen4/RNAseq/blob/master/Data/DESeq2%20Expression%20Results.csv)!) of all the *Tmem184b*<sup>GT/GT</sup> mice
-
-``` r
-aDRG_TPM = read_csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/RNAseq%20Data%20Files/RNASeqRepResults.csv",
-                    col_names = c("GeneID", "WT", "Mut")
-                    )
-```
-
-+ Now, import the differential expression analysis data:
-
-  + Either click "`Import Dataset`" in the "`Environment Window`" pane and import the `csv`, or follow the code below
-
-+ Again, these are the `DESeq2` results from `Usegalaxy.org`. Each gene for all samples was quantified and then compared between genotype
-
-+ The statistical test was a `Wald Test` on `Salmon` pseudo-aligned read counts to determine which genes
-  are differentially expressed.
-
--   Before importing into `R`, **save the Galaxy DESeq2 Output**
-    (dowloaded from `Galaxy.org` as a `.txt` file) **as a CSV** with headings to
-    import into the `R Global Environment` to then manipulate for
-    plotting purposes.
-
--   Also, in `Microsoft Excel`, add a column that converts `log2 FC` to `% WT` Expression if not already done (copy and paste the formula
-    “`POWER(2,"_value_from_log2FC_cell")`” for the entire column). Save and import.
+  - Either click "`Import Dataset`" in the "`Environment Window`" pane and import the `.csv`, or follow the code below   
 
 ``` r
 aDRG = read.csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/RNAseq%20Data%20Files/DESeq2%20Expression%20Results.csv")
