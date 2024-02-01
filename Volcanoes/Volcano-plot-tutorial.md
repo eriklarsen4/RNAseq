@@ -80,15 +80,14 @@ aDRG_TPM = read_csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/B
                     )
 ```
 
-Now, import the differential expression analysis data (`Import Dataset` in the `Environment Window`)
++ Now, import the differential expression analysis data:
 
-This is done directly in the script below
+  + Either click "`Import Dataset`" in the "`Environment Window`" pane and import the `csv`, or follow the code below
 
-Again, these are the `DESeq2` results from `Usegalaxy.org`.
-Each gene for all samples were quantified and then compared by group
++ Again, these are the `DESeq2` results from `Usegalaxy.org`. Each gene for all samples was quantified and then compared between genotype
 
-The statistical test was a `Wald Test` on `Salmon` pseudo-aligned read counts to determine which genes
-are differentially expressed.
++ The statistical test was a `Wald Test` on `Salmon` pseudo-aligned read counts to determine which genes
+  are differentially expressed.
 
 -   Before importing into `R`, **save the Galaxy DESeq2 Output**
     (dowloaded from `Galaxy.org` as a `.txt` file) **as a CSV** with headings to
@@ -96,8 +95,7 @@ are differentially expressed.
     plotting purposes.
 
 -   Also, in `Microsoft Excel`, add a column that converts `log2 FC` to `% WT` Expression if not already done (copy and paste the formula
-    “`POWER(2,"_value_from_log2FC_cell")`” for the entire column). Save
-    and import.
+    “`POWER(2,"_value_from_log2FC_cell")`” for the entire column). Save and import.
 
 ``` r
 aDRG = read.csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/Bioinformatics/RNAseq%20Data%20Files/DESeq2%20Expression%20Results.csv")
@@ -162,8 +160,10 @@ length(
     ## [1] 205
 
 Subset the dataframe to select differentially expressed genes with
-Adjusted P-values &lt; 0.05 for use in pathway analysis tools (see [GO Analysis.md](https://github.com/eriklarsen4/RNAseq/blob/master/GO%20Analysis/GO-Analysis.md) to find potential mechanistic
-pathways or other genes/interactions of interest).
+Adjusted P-values &lt; 0.05 for use in pathway analysis tools to find
+potential mechanistic pathways or other genes/interactions of interest
+
+(see [GO Analysis.md](https://github.com/eriklarsen4/RNAseq/blob/master/GO%20Analysis/GO-Analysis.md)
 
 ``` r
 HITS.01 = subset(aDRG9, aDRG9$AdjP <= 0.01)
