@@ -6,9 +6,9 @@ Erik Larsen
 I developed the following code as a tutorial for graphical analysis of short-read, `Illumina` transcriptomic data in `Dr. Martha Bhattacharya`'s lab at UA. For more details on the background, see [here](https://github.com/eriklarsen4/RNAseq/blob/master/Heatmaps/Bioinformatics.md).
 
 The plots, generated with the [ggplot2 R
-package](https://cran.r-project.org/package=ggplot2) package are standard for `differential gene expression analysis` (`DEA` or `GSEA`), but I've also added a bit more customization.
+package](https://cran.r-project.org/package=ggplot2) are standard for `differential gene expression analysis` ("`DEA`" or "`GSEA`"), but I've also added a bit more customization.
 
-This `Github R Markdown` is a generic tutorial for those less-experienced with `R` and/or plotting and deriving insights from RNA-seq data.
+This `Github Markdown` is a generic tutorial for those less-experienced with `R` and/or plotting and deriving insights from RNA-seq data.
 
 ## Environment Prep
 
