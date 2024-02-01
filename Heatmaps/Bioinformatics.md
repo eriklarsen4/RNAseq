@@ -23,14 +23,11 @@ Erik Larsen
 
 - The RNA-sequencing data processing pipeline for this analysis went as follows:
 
-1.  `Illumina FASTQ files` were pseudoaligned with the `Salmon`
-    algorithm
-
-2.  run through `Usegalaxy.org`’s `DESeq2` wrapper algorithm to obtain
-    `DGEA files`
-
-3.  `Galaxy` also returned TPM data for use in transcriptional profiling
-    (heatmaps)
+    1.  `Illumina FASTQ files` were pseudoaligned with the `Salmon` algorithm
+  
+    2.  run through `Usegalaxy.org`’s `DESeq2` wrapper algorithm to obtain `DGEA files`
+    
+    3.  `Galaxy` also returned TPM data for use in transcriptional profiling (heatmaps)
 
 -   To obtain pathway and gene ontology info, the
     [Enrichr](https://maayanlab.cloud/Enrichr/) database was queried
@@ -69,35 +66,32 @@ package for Bioconductor-relevant functionality (installing packages
 from [Bioconductor](https://www.bioconductor.org/))
 
 ``` r
-library(BiocGenerics) ## Needed to install and/or load Bioconductor packages
+library(BiocGenerics) # Needed to install and/or load Bioconductor packages
 ```
 
 Load the remaining packages
 
 ``` r
-library(enrichR) ## Taps the Enrichr database; much better utility than the website
+library(enrichR) # Taps the Enrichr database; much better utility than the website
 
-  ## For data wrangling (slicing/adding/removing/melting/rearranging dataframes and their columns and rows):
-
+  # For data wrangling (slicing/adding/removing/melting/rearranging dataframes and their columns and rows):
 library(tidyverse)
 # library(plyr)
 # library(dplyr)
 # library(reshape2)
 
-library(readr) ## For importing data and files
+library(readr) # For importing data and files
+library(stringr) # Awesome for manipulating strings
 
-library(stringr) ## Awesome for manipulating strings
-
-  ## Databases for downstream analyses of lists via gene ontology:
-
+  # Databases for downstream analyses of lists via gene ontology:
 library(biomaRt)
 #library(org.Hs.eg.db)
 library(org.Mm.eg.db)
 library(GO.db)
 
-library(pheatmap) ## For creating awesome heatmaps
+library(pheatmap) # For creating awesome heatmaps
 
-library(httpuv) ## For including plots in Markdown file output
+library(httpuv) # For including plots in Markdown file output
 ```
 
 ## Upload Enrichr DBs
@@ -106,13 +100,12 @@ Obtain databases from `enrichr` by creating a variable and viewing it.
 Subset from the variable a few databases of interest.
 
 ``` r
-    ## Store it as a variable for better visualization and eventual subsetting
 
+    # Store it as a variable for better visualization and eventual subsetting
 DBs = listEnrichrDbs()
 
-  ## View the variable in the editor to find the relevant databases and their indeces for subsetting
-  ## (click on the dataframe in the Global Environment and manually peruse)
-
+  # View the variable in the editor to find the relevant databases and their indeces for subsetting
+  # (click on the dataframe in the Global Environment and manually peruse)
 diff_DBs = DBs %>%
   dplyr::filter(grepl(libraryName, pattern = "Transcription_Factor_PPIs|Reactome_2022|Most_Popular_Genes|ENCODE_TF|GPCR|Enrichr")) %>%
   dplyr::select(libraryName) %>%
@@ -132,8 +125,7 @@ Create dataframes to house bioinformatics analyses returned from
 enrichr.
 
 ``` r
-  ## Create dataframes to store returned analyses as variables
-
+  # Create dataframes to store returned analyses as variables
 GO_Processes = data.frame()
 GO_Cell_Comps = data.frame()
 GO_Mol_Funcs = data.frame()
@@ -173,36 +165,28 @@ Import the adult `DRG DESeq2 file`
 ``` r
 aDRG = read.csv("~/GitHub/RNAseq/Data/DESeq2 Expression Results.csv")
 
-  ## Subset genes that went undetected or were outliers in terms of counts;
-  ## new dataframe should not contain any NAs in p-value columns
-
+  # Subset genes that went undetected or were outliers in terms of counts;
+  # new dataframe should not contain any NAs in p-value columns
 aDRG3 = subset(aDRG, (!is.na(aDRG[,"AdjP"])))
 
- ## Filter the DEGs by removing rRNAs and mitochondrial tRNAs, along with pseudogenes, etc.
-
+ # Filter the DEGs by removing rRNAs and mitochondrial tRNAs, along with pseudogenes, etc.
 aDRG9 = aDRG3 %>% filter(!grepl(GeneID,
                                 pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
 #mt.+.?$|  <-- string identifier for mitochondrial tRNAs
 
-
-  ## Create a column in the DESeq2 dataframe that scales the Adjusted P-value by log-base 10
-
+  # Create a column in the DESeq2 dataframe that scales the Adjusted P-value by log-base 10
 aDRG9$log10ADJP = -log10(aDRG9$AdjP)
 
 
-  ## Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
-    ## First create the column and use Gene IDs as place-holders
-
+  # Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
+    # First create the column and use Gene IDs as place-holders
 aDRG9$g.o.i. = aDRG9$GeneID
 
 
-  ## Replace DEGs with the string, "DEGs"
-
+  # Replace DEGs with the string, "DEGs"
 aDRG9$g.o.i.[which(aDRG9$AdjP <= 0.05)]= "DEGs"
 
-
-  ## Replace the remaining genes with "Non-DEGs"
-
+  # Replace the remaining genes with "Non-DEGs"
 aDRG9$g.o.i.[which(aDRG9$AdjP >= 0.05)]= "Non-DEGs"
 
 aDRG_DEG_list = c(aDRG9$GeneID[which(aDRG9$g.o.i. == "DEGs")])
@@ -320,20 +304,16 @@ Enrichr_Analysis(Genes = aDRG_DEG_list)
 Import the adult transcriptional profile (normalized TPM).
 
 ``` r
-  ## Import the adult normalized counts file.
-    ## These are expression estimates for each gene, for each sample/replicate,
-    ## where each gene's value is normalized to its sample's effect size
-
+  # Import the adult normalized counts file.
+    # These are expression estimates for each gene, for each sample/replicate,
+    # where each gene's value is normalized to its sample's effect size
 aTPM = read_csv("~/GitHub/ggplot-scripts/Bioinformatics/RNAseq Data Files/RNASeqRepResults.csv", col_names = TRUE)
 
-
-  ## Rename columns
-
+  # Rename columns
 colnames(aTPM) = c("GeneID", "WT1", "WT2", "WT3", "WT4", "Mut1", "Mut2", "Mut3", "Mut4")
 
 
-  ## Subset by only genes in the filtered aDRG DESeq2 file
-
+  # Subset by only genes in the filtered aDRG DESeq2 file
 ExpProfile = aTPM[aTPM$GeneID %in% c(aDRG9$GeneID),]
 ```
 
@@ -349,31 +329,23 @@ Find_Row_Z(Expression_Profile = ExpProfile)
 Arrange the data for generating a full transcriptional profile.
 
 ``` r
-  ## Don't remove non-DEGs
-
+  # Don't remove non-DEGs
 Z = Z %>%
   filter(GeneID %in% aDRG9$GeneID[])
 
-
-  ## Create a list of gene names ordered by euclidean distance by which to re-order the dataframe
-
+  # Create a list of gene names ordered by euclidean distance by which to re-order the dataframe
 Euclid_dist_order = hclust(dist(Z[,c(2:9)], method = "euclidean"))$order
 
-
-  ## The names (not the numbers)
-
+  # The names (not the numbers)
 Euclid_dist_ord_Genes = c(Z$GeneID[Euclid_dist_order])
 
-
-  ## Transform again to order by clusters (Euclidean distances)
-
+  # Transform again to order by clusters (Euclidean distances)
 Za = Z %>%
   mutate(GeneID =  factor(GeneID, levels = Euclid_dist_ord_Genes)) %>%
   arrange(GeneID)
 
 
-  ## Find where the "Itch-related DEGs" are in the clustered matrix subsetted to DEGs for the heatmap
-
+  # Find where the "Itch-related DEGs" are in the clustered matrix subsetted to DEGs for the heatmap
 itch_DEGs = c("Il31ra", "Cysltr2", "Npy2r", "Sst",
               "Htr1a", "P2rx3", "Lpar3", "Lpar5",
               "Scn11a", "Scn10a", "Mrgprd", "Trpc6",
@@ -410,8 +382,7 @@ View the full transcriptional profile of **Adult Tmem184b-mutant DRG
 neurons**.
 
 ``` r
- ## Visualize the Z-scored, Euclidean-clustered and ordered gene TPMs across replicates with "pheatmap"
-
+ # Visualize the Z-scored, Euclidean-clustered and ordered gene TPMs across replicates with "pheatmap"
 pheatmap(mat = Za[,2:9],
          color = colorRampPalette(c("navy", "white", "darkgoldenrod4"))((50)),
          clustsering_distance_rows = "euclidean",
