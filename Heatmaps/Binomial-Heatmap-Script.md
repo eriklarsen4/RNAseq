@@ -34,6 +34,7 @@ library(stringr)
 
 ``` r
   ## Import the relevant data
+
 e13_DEGs_and_Pathways =  read_csv("https://github.com/eriklarsen4/ggplot-scripts/blob/master/Binomial-Heatmap/Custom%20Python%20Enrichr%20Pathway%20Clustergram%20e13%20GT.csv")
 
   ## Re-arrange the data so that columns and rows can be run appropriately in a heatmap
@@ -99,4 +100,4 @@ HEATER = ggplot(e13_Heatmap, aes(e13_Heatmap$Pathways, e13_Heatmap$DEGs)) +
 HEATER
 ```
 
-![](https://github.com/eriklarsen4/ggplot-scripts/blob/master/Binomial-Heatmap/Heatmap%20of%20DEGs%20Identified%20Across%20PANTHER%20Pathways%20wLabs-1.png)<!-- -->
+![](https://github.com/eriklarsen4/RNAseq/blob/master/Heatmaps/Heatmap%20of%20DEGs%20Identified%20Across%20PANTHER%20Pathways%20wLabs-1.png)https://github.com/eriklarsen4/RNAseq/blob/master/Heatmaps/Heatmap%20of%20DEGs%20Identified%20Across%20PANTHER%20Pathways%20wLabs-1.png)<!-- -->
