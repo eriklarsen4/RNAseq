@@ -101,4 +101,4 @@ HEATER = ggplot(e13_Heatmap, aes(e13_Heatmap$Pathways, e13_Heatmap$DEGs)) +
 HEATER
 ```
 
-![](https://github.com/eriklarsen4/RNAseq/blob/master/Heatmaps/Heatmap%20of%20DEGs%20Identified%20Across%20PANTHER%20Pathways%20wLabs-1.png)https://github.com/eriklarsen4/RNAseq/blob/master/Heatmaps/Heatmap%20of%20DEGs%20Identified%20Across%20PANTHER%20Pathways%20wLabs-1.png)<!-- -->
+![](https://github.com/eriklarsen4/RNAseq/blob/master/Heatmaps/Heatmap%20of%20DEGs%20Identified%20Across%20PANTHER%20Pathways%20wLabs-1.png)<!-- -->
