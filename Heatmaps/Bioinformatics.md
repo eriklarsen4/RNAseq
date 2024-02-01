@@ -19,6 +19,10 @@ Erik Larsen
     -   heatmaps
     -   bar graphs
 
+- However, this Git Markdown focuses on the transcriptional profiles (traditional heatmaps) of the RNA-seq data from the above publication. One of these profiles was also included in that publication.
+
+- The RNA-sequencing data processing pipeline for this analysis went as follows:
+
 1.  `Illumina FASTQ files` were pseudoaligned with the `Salmon`
     algorithm
 
@@ -30,7 +34,7 @@ Erik Larsen
 
 -   To obtain pathway and gene ontology info, the
     [Enrichr](https://maayanlab.cloud/Enrichr/) database was queried
-    from the console using the
+    from the R console using the
     [enrichR](https://github.com/guokai8/Enrichr#:~:text=Description%20EnrichR%20is%20a%20package%20can%20be%20used,species%20pubished%20by%20ENSEMBL%20and%20included%20with%20Bioconductor.)
     package.
 
@@ -46,9 +50,6 @@ Erik Larsen
 
 # Environment Prep
 
-Note that code can be sectioned and condensed with the `Alt + O`
-command.
-
 Packages for this script:
 [tidyverse](https://cran.r-project.org/package=tidyverse),
 [stringr](https://cran.r-project.org/package=stringr),
@@ -61,7 +62,7 @@ Packages for this script:
 
 ## Install and Load Packages
 
-Install biology-based packages with `BiocManager`.
+Install biology-based packages with `BiocManager` (not shown).
 
 Load the [BiocGenerics](https://bioconductor.org/packages/BiocGenerics)
 package for Bioconductor-relevant functionality (installing packages
