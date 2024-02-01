@@ -1,0 +1,278 @@
+---
+title: "Volcano plots with ggplot"
+author: "Erik Larsen"
+date: "7/16/2021"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+I developed the following code as a tutorial for graphical analysis of M. Bhattacharya Lab RNAseq data. The data was processed on [Usegalaxy.org](https://usegalaxy.org/) using a bioinformatics standard algorithm, known as [DESeq2](https://genomebiology.biomedcentral.com/articles/10.1186/s13059-014-0550-8). The plots are standard for differential gene expression analysis, but using the [ggplot2 R package](https://cran.r-project.org/package=ggplot2), employing advanced techniques. This `R Markdown` file is derived from the `Volcano script`.
+
+
+## Environment Prep
+
+Upload the packages that include `ggplot2`, which is a set of functions and commands that produce images, "Grammar of Graphics", by mapping data to aesthetic properties
+
+
+```{r include = TRUE, message = FALSE}
+  ## Install the tidyverse and reshape2 packages if not already done
+    ## For example
+#install.packages("tidyverse")
+#install.packages("reshape2")
+
+  # Load them from your R package library
+## For data wrangling (slicing/adding/removing/melting/rearranging dataframes and their columns and rows):
+library(tidyverse)
+library(plyr)
+library(dplyr)
+library(reshape2)
+
+library(ggplot2) ## For awesome, publication-quality graphs
+library(ggrepel) ## For labeling mapped data on those plots
+library(stats4)
+library(readr) ## For importing data and files
+```
+
+Import the `Usegalaxy.org` data frame from the lab server that contains mean transcript counts of all the P60 WT and TMEM-GT/GT mice.
+
+```{r Profile Import, include = TRUE, warning = FALSE, echo = TRUE, message = FALSE}
+aDRG_TPM = read_csv("C:/Users/Erik/Desktop/BoxCopy/Lab/Omics/RNAseq/Adult DRG/Processed Galaxy Output/Counts files to Upload/RNASeqRepResults.csv", col_names = c("GeneID", "WT", "Mut"))
+```
+
+Import the differential expression analysis data if not already done (`Import Dataset` in the `Environment Window`); it is directly called via the script below. These are the `DESeq2` results from `Usegalaxy.org`, computing a `Wald Test` on Salmon pseudoaligned counts files to determine which genes are differentially expressed.
+
+* Before importing into `R`, **save the Galaxy DESeq2 Output** (dowloaded from Galaxy as a .txt file) **as a CSV** with headings to import into the `R Global Environment` to then manipulate for plotting purposes.
+
++ Also add a column that converts `log2 FC` to `% WT` Expression in Excel if not already done (copy and paste the formula "`POWER(2,"_value_from_log2FC_cell")`" for the entire column. Save and import.
+
+* Example data here is the same file as from the `Comprehensive RNAseq` script-- the Adult ("aDRG") dataset
+
+
+``` {r aDRG Import, warning = FALSE, echo = TRUE, include = TRUE, message = FALSE}
+aDRG = read.csv("C:/Users/Erik/Desktop/BoxCopy/Lab/Omics/RNAseq/Adult DRG/Processed Galaxy Output/Test Results to Upload/DESeq2 Expression Results.csv")
+  
+  ## Filter (subset) genes that went undetected or were outliers in terms of counts;
+  ## new dataframe should not contain any NAs in p-value columns
+aDRG3 = subset(aDRG, (!is.na(aDRG[,"AdjP"])))
+
+ ## Filter the DEGs by removing rRNAs and mitochondrial tRNAs.
+aDRG9 = aDRG3 %>% filter(!grepl(aDRG3$GeneID, pattern = "Rps.+.?$|RP.+.?$|Rpl.+.?$|MRPL.+.?$|Mrpl.+.?$|MRPS.+.?$|Mrps.+.?$|.*Rik.+$|.*Rik$|Gm.+.?$|^[A-Z]+[A-Z].+.?$|^[0-9]+.+.?$"))
+#mt.+.?$|  <-- string identifier for mitochondrial tRNAs
+
+  ## Add a column to the DEG dataset that contains a string, describing whether the gene is differentially expressed
+    ## First create the column and use Gene IDs as place-holders
+aDRG9$labs = aDRG9$GeneID
+  ## Replace DEGs with the string, "DEGs"
+aDRG9$labs[which(aDRG9$AdjP <= 0.05)]= "DEGs"
+  ## Replace the remaining genes with "Non-DEGs"
+aDRG9$labs[which(aDRG9$AdjP >= 0.05)]= "Non-DEGs"
+
+aDRG_DEG_list = c(aDRG9$GeneID[which(aDRG9$labs == "DEGs")])
+```
+
+## Data processing
+
+How many genes are significantly different from WT expression?
+
+``` {r include = TRUE, warning = FALSE, echo = TRUE, message = FALSE}
+length(
+  which(aDRG9$AdjP <= 0.10) ) ## For FDR <= 0.1
+length(
+  which(aDRG9$AdjP <= 0.05) ) ## For FDR <= 0.05
+length( 
+  which(aDRG9$AdjP <= 0.01) ) ## For FDR <= 0.01
+```
+
+Subset the dataframe to select differentially expressed genes with Adjusted P-values < 0.05 for use in pathway analysis tools (see [Gene Ontology and Pathway Analysis R Markdown file](C:/Users/Erik/Desktop/BoxCopy/Lab/Omics/Gene Ontology and Pathway Analysis for Lab.Rmd) or its source `GO Analysis` script) to find potential mechanistic pathways or other genes/interactions of interest.
+``` {r include = TRUE, warning = FALSE, echo = TRUE, message = FALSE}
+HITS.01 = subset(aDRG9, aDRG9$AdjP <= 0.01)
+HITS.05 = subset(aDRG9, aDRG9$AdjP <= 0.05)
+HITS.10 = subset(aDRG9, aDRG9$AdjP <= 0.10)
+
+  ## Create a new data frame of the average reads from both genotypes of genes with an Adjusted P-value < 0.05
+Candidate_Screen = aDRG_TPM %>%
+  filter(GeneID %in% HITS.05$GeneID)
+```
+
+## Volcano plot prep
+
+Volcano plots display the `fold change` of the manipulation relative to control (in this case log base 2 FC of mutant transcripts relative to wild type) along the x-axis, and `Adjusted P-values` along the y-axis
+
+Transform the Adjusted P-values so that they are integers and are somewhat shrunk in a manner that is fit for viewing
+``` {r log10Q creation, warning = FALSE, echo = TRUE, include = TRUE, message = FALSE}
+aDRG9$log10ADJP = -log10(aDRG9$AdjP)
+```
+
+Create a new column that we will use to describe/slice all the data based on a feature ("`mapping`"). Totally arbitrary, but we'll call them "genes of interest" or "`g.o.i.`" for short.
+``` {r GOI column, warning = FALSE, echo = TRUE, include = TRUE, messsage = FALSE}
+  ## Make the new column a column of characters.
+    ## Easiest way is to just use ' "" ' or another column already populated by strings (characters)
+aDRG9$g.o.i. = aDRG9$GeneID
+
+  ## Fill the points with appropriately indexed data;
+    ## "D.E.G.s", aka "Differentially Expressed Genes",
+    ## defined as being "genes of interest" with Adjusted P-Values of <= 0.05
+aDRG9$g.o.i.[which(aDRG9$AdjP <= 0.05)] = "D.E.G.s"
+
+aDRG9$g.o.i.[which(aDRG9$AdjP > 0.05)] = "Non-D.E.G.s"
+
+```
+
+Create labels on points we're interested in labeling in the volcano plots.
+``` {r Labs column, warning = FALSE, echo = TRUE, include = TRUE, message = FALSE}
+  ## Create the column, "labs"; hide all of the text labels with: ""
+aDRG9$labs = ""
+```
+
+Label only these selected items; adjust for each experiment; for the current example and a more global volcano plot, highlight the most extreme data points on the plot.
+``` {r idx creation, warning = FALSE, echo = TRUE, include = TRUE, message = FALSE}
+ix_label1 = which(aDRG9$log10ADJP > 50)
+
+  ## Fill in the labels
+aDRG9$labs[c(ix_label1)] = aDRG9$GeneID[c(ix_label1)]
+
+```
+
+## First volcano plot
+Use the `aDRG9` dataframe as the data to plot
+Set the `x-axis` variable as log-base 2 fold change (`log2FC`)
+Set the `y-axis` as log-base 10 Adjusted P-value (`log10ADJP`)
+Set the points to be colored by the `g.o.i.` column previously created
+
+Subset the data by each different group within that g.o.i. column
+
+``` {r include = TRUE, warning = FALSE, echo = TRUE, message = FALSE}
+  ## Find axis limits
+min(aDRG9$log2.FC.)
+max(aDRG9$log2.FC.)
+
+max(aDRG9$log10ADJP)
+
+```
+
+Create the plot, and save it as a variable. Add layers:
+
++ use the `ggplot` function to set the data
++ specify the type of graph: scatter plot points; subset to the background/bottom layer; map the `x`, `y` variables/axes, set "`color`" = to the column we created, and set `alpha` (transparency) low for points that will be the bottom layer (get plotted over)
++ repeat for the upper layer, using a stronger `alpha` (0 - 1)
++ set the coordinates of the graph with `coord_cartesian`
++ use `geom_hline` to create a horizontal line that will provide a clear division between DEGs and Non-DEGs
++ use `geom_text` to add a label to the line
++ use `labs` to add title, axes, and legend labels
++ use `theme_bw` to turn the graph border and background white with a black outline
++ use `theme` to control graph title and legend positions
++ use `scale_color_manual` to map color to the appropriate data points
+
+``` {r vol1, warning = FALSE, echo = TRUE, include = TRUE, message = FALSE}
+vol1 = ggplot(data = aDRG9) + 
+  geom_point(data = subset(aDRG9, g.o.i. == "Non-D.E.G.s"),
+             aes(x = log2.FC., y = log10ADJP, color = g.o.i.), alpha = 0.1) +
+  geom_point(data = subset(aDRG9, g.o.i. == "D.E.G.s"),
+             aes(x = log2.FC., y = log10ADJP, color = g.o.i.), alpha = 0.3) +
+  coord_cartesian(xlim = c(min(aDRG$log2.FC.),
+                           max(aDRG9$log2.FC.)),
+                  ylim = c(0, max(aDRG9$log10ADJP))) +
+  geom_hline(yintercept = min(aDRG9$log10ADJP[which(aDRG9$g.o.i. == "D.E.G.s")]),
+             linetype = "dashed",
+             color = "firebrick") +
+  geom_text(x = -3, y = 4,
+            label = "FDR \U2264 0.05",
+            color = "firebrick", size = 3) +
+  labs(title = expression(paste(italic("Tmem184b")^"GT/GT", " DRG mRNA Exp. Changes")),
+       x = "log2 (FC) rel. to WT",
+       y = "-log10 (Adj.P-val)",
+       col = "Gene Data Type") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = c(0.90,0.87)) + 
+  scale_color_manual(values = c("darkgoldenrod4", "gray48"))
+```
+```{r Add labs, warning = FALSE, echo = TRUE, include = TRUE, message = FALSE}
+  ## Overwrite the variable, adding labels
+vol1 = vol1 + geom_text_repel(data = aDRG9,
+                              x = aDRG9$log2.FC.,
+                              y = aDRG9$log10ADJP,
+                              color = "black",
+                              aes(label = aDRG9$labs),
+                              max.overlaps = Inf) 
+```
+
+Plot the first volcano
+
+``` {r Broad aDRG Volcano, warning = FALSE, echo = TRUE, render = TRUE, include = TRUE, message = FALSE}
+  ## Plot the volcano
+vol1
+```
+
+## Second volcano plot
+
+Let's add a little more rich data
+```{r Itch DEGs, warning = FALSE, echo = TRUE, include = TRUE, message = FALSE}
+  ## Re-set the mapping columm
+aDRG9$g.o.i. = ""
+
+  ## Fill the points with appropriately indexed data:
+    ## Notable pruriceptor genes defined as being "genes of interest", with ADJPs of <= 0.05
+aDRG9$g.o.i.[
+  c(2,5,8,9,13,14,20,30,33,44,51,69,75,95,112,122,136,192,230,248,327,328,329,331)]= "Itch-related D.E.G.s"
+
+    ## Fill the DEGs not related to itch
+aDRG9$g.o.i.[c(1:376)][
+  -c(2,5,8,9,13,14,20,30,33,44,51,69,75,95,112,122,136,192,230,248,327,328,329,331)] = "D.E.G.s"
+
+    ## Fill the rest (Non-DEGs)
+aDRG9$g.o.i.[which(aDRG9$AdjP > 0.05)] = "Non-D.E.G.s"
+```
+
+Add new labels
+```{r Itch labs, include = TRUE, warning = FALSE, echo = TRUE, message = FALSE}
+  ## Create a new "labs" column, though we could re-use the old one
+aDRG9$labs2 = ""
+
+aDRG9$labs2[c(2,5,8,9,13,20,30,51,112,331)] = aDRG9$GeneID[c(2,5,8,9,13,20,30,51,112,331)]
+```
+
+Store the new graph as a new variable
++ add a new subset
++ zoom in
+``` {r vol2, warning = FALSE, echo = TRUE, include = TRUE, message = FALSE}
+vol2 = ggplot(data = aDRG9) + 
+  geom_point(data = subset(aDRG9, g.o.i. == "Non-D.E.G.s"),
+             aes(x = log2.FC., y = log10ADJP, color = g.o.i.), alpha = 0.1) +
+  geom_point(data = subset(aDRG9, g.o.i. == "D.E.G.s"),
+             aes(x = log2.FC., y = log10ADJP, color = g.o.i.), alpha = 0.3) +
+  geom_point(data = subset(aDRG9, g.o.i. == "Itch-related D.E.G.s"),
+             aes(x = log2.FC., y = log10ADJP, color = g.o.i.), alpha = 0.9) +
+  coord_cartesian(xlim = c(-3.09,1.6), ylim = c(0,52)) +
+  geom_hline(yintercept = min(aDRG9$log10ADJP[which(aDRG9$g.o.i. == "D.E.G.s")]),
+             linetype = "dashed",
+             color = "firebrick") +
+  geom_text(x = -3, y = 2.5,
+            label = "FDR \U2264 0.05",
+            color = "firebrick", size = 3) +
+  labs(title = expression(paste(italic("Tmem184b")^"GT/GT", " DRG mRNA Exp. Changes")),
+       x = "log2 (FC) rel. to WT",
+       y = "-log10 (Adj.P-val)",
+       col = "Gene Data Type") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        legend.position = c(0.85,0.85)) + 
+  scale_color_manual(values = c("darkgoldenrod4", "navy", "gray48"))
+```
+```{r vol2 labs, warning = FALSE, echo = TRUE, include = TRUE, message = FALSE}
+  ## Overwrite the variable, adding labels
+vol2 = vol2 + geom_text_repel(data = aDRG9,
+                              x = aDRG9$log2.FC.,
+                              y = aDRG9$log10ADJP,
+                              color = "black",
+                              aes(label = aDRG9$labs2), 
+                              max.overlaps = Inf)
+```
+
+Plot the second volcano
+``` {r Itch Volcano, warning = FALSE, echo = TRUE, render = TRUE, include = TRUE, message = FALSE}
+  ## Plot the volcano
+vol2
+```
+
